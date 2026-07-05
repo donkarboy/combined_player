@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stream Player</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.7/hls.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
 <style>
   :root {
     --bg:#0a0a0f; --surface:#111118; --surface2:#18181f; --border:#1e1e2e;
     --accent:#6c63ff; --accent2:#a78bfa; --text:#e2e8f0; --muted:#64748b;
     --ok:#4ade80; --err:#f87171; --warn:#fb923c;
-    --tv:#f59e42; --rock:#38bdf8; --mono:'JetBrains Mono','Fira Code',monospace;
+    --tv:#f59e42; --rock:#38bdf8; --vidzee:#c084fc; --mono:'JetBrains Mono','Fira Code',monospace;
   }
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;}
@@ -81,13 +82,14 @@
   .panel-head h2{font-size:.8rem;font-weight:700;}
   .ph-cnt{margin-left:auto;background:var(--accent);color:#fff;font-size:.6rem;font-weight:700;border-radius:20px;padding:2px 8px;}
 
-  .src-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;}
-  .src-tab{flex:1;padding:9px 4px;font-size:.68rem;font-weight:600;text-align:center;
-    cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;}
+  .src-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;}
+  .src-tab{flex:1;min-width:0;padding:9px 4px;font-size:.64rem;font-weight:600;text-align:center;
+    cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap;}
   .src-tab:hover{color:var(--text);}
   .src-tab.active{color:var(--accent2);border-bottom-color:var(--accent);}
   .src-tab.active-tv{color:var(--tv);border-bottom-color:var(--tv);}
   .src-tab.active-rock{color:var(--rock);border-bottom-color:var(--rock);}
+  .src-tab.active-vidzee{color:var(--vidzee);border-bottom-color:var(--vidzee);}
 
   .fetch-pane{display:none;flex-direction:column;flex-shrink:0;}
   .fetch-pane.visible{display:flex;}
@@ -102,6 +104,7 @@
   .fetch-row button.btn-movie{background:var(--accent);}
   .fetch-row button.btn-tv{background:var(--tv);color:#1a1200;}
   .fetch-row button.btn-rock{background:var(--rock);color:#0a1a24;}
+  .fetch-row button.btn-vidzee{background:var(--vidzee);color:#0a0a0f;}
   .fetch-row button:hover{opacity:.88;}
   .fetch-row button:disabled{opacity:.45;cursor:not-allowed;}
   .ep-row{display:flex;gap:5px;}
@@ -113,9 +116,16 @@
   .type-btn.active-movie{background:var(--accent);color:#fff;border-color:var(--accent);}
   .type-btn.active-tv{background:var(--tv);color:#1a1200;border-color:var(--tv);}
   .type-btn.active-rock{background:var(--rock);color:#0a1a24;border-color:var(--rock);}
+  .type-btn.active-vidzee{background:var(--vidzee);color:#0a0a0f;border-color:var(--vidzee);}
 
   .fetch-status{font-size:.68rem;padding:5px 11px;color:var(--muted);min-height:20px;flex-shrink:0;}
   .fetch-status.ok{color:var(--ok);}.fetch-status.err{color:var(--err);}.fetch-status.warn{color:var(--warn);}
+
+  /* Vidzee mini log */
+  .vz-log{font-size:.63rem;padding:4px 11px 5px;font-family:var(--mono);color:var(--muted);
+    max-height:72px;overflow-y:auto;border-bottom:1px solid var(--border);display:none;flex-direction:column;gap:1px;}
+  .vz-log.visible{display:flex;}
+  .vz-log .lok{color:var(--ok);}.vz-log .lerr{color:var(--err);}.vz-log .linfo{color:#93c5fd;}
 
   .stream-list{flex:1;overflow-y:auto;padding:7px 5px;display:flex;flex-direction:column;gap:3px;}
   .stream-list:empty::after{content:"No streams loaded.";display:block;text-align:center;
@@ -135,6 +145,7 @@
   .tag-embed{background:#0a1f2a;color:#38bdf8;}.tag-playlist{background:#1a1535;color:var(--accent2);}
   .tag-mirror{background:var(--surface2);color:var(--muted);}
   .tag-rock{background:#0a1f2a;color:var(--rock);}
+  .tag-vidzee{background:#1a0a2a;color:var(--vidzee);}
   .stream-url-text{font-size:.63rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}
   .stream-item.active .stream-url-text{color:var(--accent2);}
   .play-icon{flex-shrink:0;color:var(--accent);font-size:.72rem;opacity:0;}
@@ -151,6 +162,7 @@
   .mb-accent{background:rgba(108,99,255,.15);color:#a78bfa;border:1px solid rgba(108,99,255,.3);}
   .mb-tv{background:rgba(245,158,66,.12);color:var(--tv);border:1px solid rgba(245,158,66,.3);}
   .mb-rock{background:rgba(56,189,248,.12);color:var(--rock);border:1px solid rgba(56,189,248,.3);}
+  .mb-vidzee{background:rgba(192,132,252,.12);color:var(--vidzee);border:1px solid rgba(192,132,252,.3);}
   .mb-gray{background:var(--surface2);color:var(--muted);border:1px solid var(--border);}
 
   ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}
@@ -222,9 +234,10 @@
 
     <!-- Tabs -->
     <div class="src-tabs">
-      <div class="src-tab active"      id="tab-vidnest"  onclick="switchTab('vidnest')">⚡ VidNest</div>
-      <div class="src-tab"             id="tab-vaplayer" onclick="switchTab('vaplayer')">🎬 VAPlayer</div>
-      <div class="src-tab"             id="tab-vidrock"  onclick="switchTab('vidrock')">🪨 VidRock</div>
+      <div class="src-tab active"        id="tab-vidnest"  onclick="switchTab('vidnest')">⚡ VidNest</div>
+      <div class="src-tab"               id="tab-vaplayer" onclick="switchTab('vaplayer')">🎬 VAPlayer</div>
+      <div class="src-tab"               id="tab-vidrock"  onclick="switchTab('vidrock')">🪨 VidRock</div>
+      <div class="src-tab"               id="tab-vidzee"   onclick="switchTab('vidzee')">🔮 Vidzee</div>
     </div>
 
     <!-- ══ VidNest pane ══ -->
@@ -292,6 +305,30 @@
       </div>
     </div>
 
+    <!-- ══ Vidzee pane ══ -->
+    <div class="fetch-pane" id="pane-vidzee">
+      <div class="fetch-inner">
+        <div class="type-toggle" style="margin-bottom:2px;">
+          <button class="type-btn active-vidzee" id="vz-btn-movie" onclick="vzSetType('movie')">🎬 Movie</button>
+          <button class="type-btn" id="vz-btn-tv" onclick="vzSetType('tv')">📺 TV Show</button>
+        </div>
+        <div class="fetch-row">
+          <input id="vz-tmdb" type="number" placeholder="TMDB ID" value="254" style="width:82px;flex:none"/>
+          <button class="btn-vidzee" id="vz-btn" onclick="fetchVidzee()">Fetch</button>
+        </div>
+        <div class="ep-row" id="vz-ep" style="display:none">
+          <input id="vz-season"  type="number" placeholder="Season"  value="1"/>
+          <input id="vz-episode" type="number" placeholder="Episode" value="1"/>
+        </div>
+      </div>
+      <div class="fetch-status" id="vz-status">Enter a TMDB ID and click Fetch.</div>
+      <div class="vz-log" id="vz-log"></div>
+      <div class="movie-meta" id="vz-meta">
+        <div class="movie-meta-title" id="vz-meta-title"></div>
+        <div class="movie-meta-row"   id="vz-meta-badges"></div>
+      </div>
+    </div>
+
     <div class="stream-list" id="streamList"></div>
   </div>
 </div>
@@ -305,12 +342,13 @@ let activeItem = null;
 let currentTab = 'vidnest';
 let vaType     = 'movie';
 let vrType     = 'movie';
+let vzType     = 'movie';
 
 // ═══════════════════════════════════════════════════════════════════
 // VidNest resolver
 // ═══════════════════════════════════════════════════════════════════
 const ALPHA = "RB0fpH8ZEyVLkv7c2i6MAJ5u3IKFDxlS1NTsnGaqmXYdUrtzjwObCgQP94hoeW+/=";
-const SERVERS = {
+const VN_SERVERS = {
   catflix:"movies4f", ophim:"klikxxi",    alfa:"moviesapi",
   beta:"purstream",   lamda:"allmovies",  prime:"catflix",
   hexa:"vidlink",     sigma:"hollymoviehd", gama:"flixhq", delta:"allmovies",
@@ -413,7 +451,7 @@ async function fetchVidnest(){
   }
   vnSetStatus(`Resolving via ${vnProxy.name}…`,"warn");
 
-  const jobs=Object.entries(SERVERS).map(async([name,backend])=>{
+  const jobs=Object.entries(VN_SERVERS).map(async([name,backend])=>{
     try{
       const urls=await vnFetchServer(backend,path);
       return{server:name,streams:urls.map(u=>({url:u,type:detectType(u)}))};
@@ -584,7 +622,6 @@ async function fetchVidrock(){
     const streams=Object.entries(data).filter(([,v])=>v?.url);
     if(!streams.length) throw new Error("No streams found.");
 
-    // Embed first
     const items=[];
     items.push({pill:"embed",label:"Embed",url:embedUrl,type:"embed"});
     streams.forEach(([name,info])=>{
@@ -610,40 +647,171 @@ async function fetchVidrock(){
 function vrSetStatus(msg,cls=""){setFetchStatus("vr-status",msg,cls);}
 
 // ═══════════════════════════════════════════════════════════════════
+// Vidzee resolver
+// ═══════════════════════════════════════════════════════════════════
+const VZ_STATIC_SECRET = "c4a8f1d7e2b9a6c3d0f5e8a1b7c4d9e2";
+const VZ_PROXY         = "https://vixsrcproxy2.khantara922.workers.dev/";
+const VZ_SERVERS = [
+  {sr:"0", name:"Tcloud"},   {sr:"1", name:"IpCloud"},
+  {sr:"2", name:"Achilles"}, {sr:"3", name:"Nflix"},
+  {sr:"4", name:"Drag"},     {sr:"5", name:"Viet"},
+  {sr:"6", name:"Hindi"},    {sr:"7", name:"Hindi_v2"},
+];
+let vzRuntimeKey = null;
+
+function vzSetType(type){
+  vzType=type;
+  document.getElementById("vz-ep").style.display=type==="tv"?"flex":"none";
+  document.getElementById("vz-btn-movie").className="type-btn"+(type==="movie"?" active-vidzee":"");
+  document.getElementById("vz-btn-tv").className   ="type-btn"+(type==="tv"   ?" active-vidzee":"");
+  document.getElementById("vz-btn").className=type==="tv"?"btn-tv":"btn-vidzee";
+}
+
+async function vzProxyFetch(url){
+  const r=await fetch(VZ_PROXY+"?url="+encodeURIComponent(url),{signal:AbortSignal.timeout(15000)});
+  if(!r.ok) throw new Error("proxy "+r.status);
+  return r.text();
+}
+
+async function vzDecryptApiKey(encryptedB64){
+  const raw    = Uint8Array.from(atob(encryptedB64.trim()), c=>c.charCodeAt(0));
+  const nonce  = raw.slice(0,12);
+  const tag    = raw.slice(12,28);
+  const cipher = raw.slice(28);
+  const ctWithTag = new Uint8Array([...cipher,...tag]);
+  const keyBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(VZ_STATIC_SECRET));
+  const key    = await crypto.subtle.importKey("raw",keyBuf,{name:"AES-GCM"},false,["decrypt"]);
+  const plain  = await crypto.subtle.decrypt({name:"AES-GCM",iv:nonce},key,ctWithTag);
+  return new TextDecoder().decode(plain);
+}
+
+function vzDecryptLink(encLink, runtimeKey){
+  const decoded        = atob(encLink);
+  const [ivB64, ctB64] = decoded.split(":");
+  const keyBytes       = runtimeKey.slice(0,32).padEnd(32,"\0");
+  const key            = CryptoJS.enc.Utf8.parse(keyBytes);
+  const iv             = CryptoJS.enc.Base64.parse(ivB64);
+  const ct             = CryptoJS.enc.Base64.parse(ctB64);
+  const dec            = CryptoJS.AES.decrypt({ciphertext:ct},key,{iv,mode:CryptoJS.mode.CBC,padding:CryptoJS.pad.Pkcs7});
+  return dec.toString(CryptoJS.enc.Utf8);
+}
+
+function vzLog(msg,cls="linfo"){
+  const el=document.getElementById("vz-log");
+  el.classList.add("visible");
+  const span=document.createElement("span");
+  span.className=cls;span.textContent=msg;
+  el.appendChild(span);
+  el.scrollTop=el.scrollHeight;
+}
+function vzClearLog(){
+  const el=document.getElementById("vz-log");
+  el.innerHTML="";el.classList.remove("visible");
+}
+
+async function fetchVidzee(){
+  const tmdb    = document.getElementById("vz-tmdb").value.trim();
+  const season  = document.getElementById("vz-season").value||"";
+  const episode = document.getElementById("vz-episode").value||"";
+  if(!tmdb){vzSetStatus("Enter a TMDB ID first.","err");return;}
+
+  const embedUrl = `https://player.vidzee.wtf/embed/${vzType}/${tmdb}`;
+
+  clearList();
+  hideMeta("vz");
+  vzClearLog();
+  document.getElementById("hdr-status").textContent="fetching…";
+  vzSetStatus("Starting Vidzee…","warn");
+
+  const btn=document.getElementById("vz-btn");
+  btn.disabled=true;
+
+  try{
+    // 1. Get runtime API key (cache it)
+    if(!vzRuntimeKey){
+      vzLog("Fetching runtime API key…");
+      const raw = await vzProxyFetch("https://core.vidzee.wtf/api-key");
+      vzRuntimeKey = await vzDecryptApiKey(raw.replace(/\s+/g,""));
+      vzLog(`API key OK: ${vzRuntimeKey.slice(0,8)}…`,"lok");
+    } else {
+      vzLog("Using cached API key…","lok");
+    }
+
+    // 2. Embed entry
+    const items=[];
+    items.push({pill:"embed",label:"Embed",url:embedUrl,type:"embed"});
+
+    // 3. Loop servers
+    const seen=new Set();
+    let totalFound=0;
+
+    for(const srv of VZ_SERVERS){
+      let apiUrl=`https://player.vidzee.wtf/api/server?id=${encodeURIComponent(tmdb)}&sr=${srv.sr}`;
+      if(vzType==="tv"&&season&&episode) apiUrl+=`&ss=${season}&ep=${episode}`;
+      try{
+        vzLog(`[${srv.name}] fetching…`);
+        const text    = await vzProxyFetch(apiUrl);
+        const payload = JSON.parse(text);
+        if(payload?.error){vzLog(`[${srv.name}] error: ${payload.error}`,"lerr");continue;}
+        let found=0;
+        for(const item of (payload?.url||[])){
+          const enc=item?.link;
+          if(!enc) continue;
+          try{
+            const dec=vzDecryptLink(enc,vzRuntimeKey);
+            if(!dec||seen.has(dec)) continue;
+            seen.add(dec);
+            const t=detectType(dec);
+            items.push({pill:"vidzee",label:srv.name,url:dec,type:t});
+            found++;totalFound++;
+          }catch(e){vzLog(`[${srv.name}] decrypt fail: ${e.message}`,"lerr");}
+        }
+        if(found) vzLog(`[${srv.name}] ✓ ${found} stream(s)`,"lok");
+        else      vzLog(`[${srv.name}] no streams`);
+      }catch(e){
+        vzLog(`[${srv.name}] failed: ${e.message}`,"lerr");
+      }
+    }
+
+    if(!totalFound&&items.length<=1) throw new Error("No streams found.");
+
+    showMeta("vz",
+      vzType==="tv"?`TMDB ${tmdb} · S${season}E${episode}`:`TMDB ${tmdb}`,
+      vzType, items.length, null, "vidzee"
+    );
+    addGroup("Vidzee", items);
+    updateTotal(items.length);
+    vzSetStatus(`✓ ${items.length} URL(s) found`,"ok");
+    document.getElementById("hdr-status").textContent=`${items.length} streams`;
+  }catch(e){
+    vzSetStatus(`Error: ${e.message}`,"err");
+    document.getElementById("hdr-status").textContent="error";
+  }finally{
+    btn.disabled=false;
+  }
+}
+function vzSetStatus(msg,cls=""){setFetchStatus("vz-status",msg,cls);}
+
+// ═══════════════════════════════════════════════════════════════════
 // Shared meta helpers
 // ═══════════════════════════════════════════════════════════════════
-function showMeta(prefix, title, type, count, imdb){
-  document.getElementById(`${prefix}-meta-title`||`${prefix}-title`).textContent=title;
-  const b=document.getElementById(`${prefix}-meta-badges`||`${prefix}-badges`);
-  const isRock = prefix==="vr";
-  b.innerHTML=`<span class="meta-badge ${type==="tv"?"mb-tv":isRock?"mb-rock":"mb-accent"}">${type==="tv"?"📺 TV":"🎬 Movie"}</span>
+function showMeta(prefix, title, type, count, imdb, flavor){
+  const titleEl  = document.getElementById(prefix==="va"?"va-title":`${prefix}-meta-title`);
+  const badgesEl = document.getElementById(prefix==="va"?"va-badges":`${prefix}-meta-badges`);
+  const metaEl   = document.getElementById(`${prefix}-meta`);
+  if(!titleEl||!badgesEl||!metaEl) return;
+  titleEl.textContent=title;
+  const isRock   = prefix==="vr";
+  const isVidzee = prefix==="vz"||flavor==="vidzee";
+  const typeCls  = type==="tv"?"mb-tv":isVidzee?"mb-vidzee":isRock?"mb-rock":"mb-accent";
+  badgesEl.innerHTML=`<span class="meta-badge ${typeCls}">${type==="tv"?"📺 TV":"🎬 Movie"}</span>
     <span class="meta-badge mb-gray">${count} URL(s)</span>`+
     (imdb?`<a href="https://www.imdb.com/title/${imdb}/" target="_blank" style="font-size:.6rem;color:var(--accent);text-decoration:none">IMDb ↗</a>`:"");
-  document.getElementById(`${prefix}-meta`).classList.add("visible");
+  metaEl.classList.add("visible");
 }
 function hideMeta(prefix){
   const el=document.getElementById(`${prefix}-meta`);
   if(el) el.classList.remove("visible");
-}
-
-// ─── fix: va-meta uses different sub-element IDs ──────────────────
-// Patch showMeta for va (legacy IDs)
-const _showMetaOrig=showMeta;
-function showMeta(prefix,title,type,count,imdb){
-  const titleEl = document.getElementById(
-    prefix==="va"?"va-title":`${prefix}-meta-title`
-  );
-  const badgesEl= document.getElementById(
-    prefix==="va"?"va-badges":`${prefix}-meta-badges`
-  );
-  const metaEl  = document.getElementById(`${prefix}-meta`);
-  if(!titleEl||!badgesEl||!metaEl) return;
-  titleEl.textContent=title;
-  const isRock=prefix==="vr";
-  badgesEl.innerHTML=`<span class="meta-badge ${type==="tv"?"mb-tv":isRock?"mb-rock":"mb-accent"}">${type==="tv"?"📺 TV":"🎬 Movie"}</span>
-    <span class="meta-badge mb-gray">${count} URL(s)</span>`+
-    (imdb?`<a href="https://www.imdb.com/title/${imdb}/" target="_blank" style="font-size:.6rem;color:var(--accent);text-decoration:none">IMDb ↗</a>`:"");
-  metaEl.classList.add("visible");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -685,13 +853,14 @@ function addGroup(serverName, streams){
 // ═══════════════════════════════════════════════════════════════════
 function switchTab(tab){
   currentTab=tab;
-  ["vidnest","vaplayer","vidrock"].forEach(t=>{
-    const tabEl=document.getElementById(`tab-${t}`);
+  ["vidnest","vaplayer","vidrock","vidzee"].forEach(t=>{
+    const tabEl =document.getElementById(`tab-${t}`);
     const paneEl=document.getElementById(`pane-${t}`);
     const isActive=t===tab;
     let cls="src-tab";
     if(isActive){
-      if(t==="vidrock") cls+=" active-rock";
+      if(t==="vidrock")  cls+=" active-rock";
+      else if(t==="vidzee") cls+=" active-vidzee";
       else if(t==="vaplayer"&&vaType==="tv") cls+=" active-tv";
       else cls+=" active";
     }
@@ -701,6 +870,7 @@ function switchTab(tab){
   clearList();
   if(tab==="vaplayer") hideMeta("va");
   if(tab==="vidrock")  hideMeta("vr");
+  if(tab==="vidzee")   hideMeta("vz");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -719,7 +889,8 @@ function isEmbedUrl(url){
     const h=new URL(url).hostname;
     const hosts=["goodstream.cc","vidlink.pro","vidsrc.to","vidsrc.me","vidsrc.xyz",
       "embed.su","multiembed.mov","2embed.cc","smashystream.com","moviesapi.club",
-      "vidfast.pro","vidnest.fun","warezcdn.link","frembed.hair","filemoon.sx","vaplayer.ru","vidrock.ru"];
+      "vidfast.pro","vidnest.fun","warezcdn.link","frembed.hair","filemoon.sx",
+      "vaplayer.ru","vidrock.ru","vidzee.wtf"];
     if(hosts.some(e=>h.includes(e))) return true;
     if(new URL(url).pathname.includes("/embed/")) return true;
   }catch{}
@@ -868,6 +1039,7 @@ function esc(s){
       document.getElementById("vn-tmdb").value=mv[1];
       document.getElementById("va-tmdb").value=mv[1];
       document.getElementById("vr-tmdb").value=mv[1];
+      document.getElementById("vz-tmdb").value=mv[1];
       fetchVidnest();
     } else if(tv){
       document.getElementById("vn-tmdb").value=tv[1];
@@ -879,6 +1051,10 @@ function esc(s){
       vrSetType("tv");
       document.getElementById("vr-season").value=tv[2];
       document.getElementById("vr-episode").value=tv[3];
+      document.getElementById("vz-tmdb").value=tv[1];
+      vzSetType("tv");
+      document.getElementById("vz-season").value=tv[2];
+      document.getElementById("vz-episode").value=tv[3];
       fetchVidnest();
     }
   }
@@ -887,6 +1063,7 @@ function esc(s){
     document.getElementById("vn-tmdb").value=tmdb;
     document.getElementById("va-tmdb").value=tmdb;
     document.getElementById("vr-tmdb").value=tmdb;
+    document.getElementById("vz-tmdb").value=tmdb;
     if(p.get("type")==="tv"){
       document.getElementById("vn-mtype").value="tv";
       document.getElementById("vn-ep").style.display="flex";
@@ -895,6 +1072,9 @@ function esc(s){
       vrSetType("tv");
       if(p.get("season"))  document.getElementById("vr-season").value=p.get("season");
       if(p.get("episode")) document.getElementById("vr-episode").value=p.get("episode");
+      vzSetType("tv");
+      if(p.get("season"))  document.getElementById("vz-season").value=p.get("season");
+      if(p.get("episode")) document.getElementById("vz-episode").value=p.get("episode");
     }
     fetchVidnest();
   }

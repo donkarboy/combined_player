@@ -171,14 +171,25 @@
   .stream-item:hover .copy-icon{opacity:1;}
   .copy-icon:hover{color:var(--ok);}
 
-  .ep-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;
-    background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 10px;}
-  .ep-nav button{background:var(--surface2);border:1px solid var(--border);color:var(--text);
-    padding:8px 14px;border-radius:8px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .12s;}
-  .ep-nav button:hover:not(:disabled){border-color:var(--accent);color:var(--accent2);}
-  .ep-nav button:disabled{opacity:.35;cursor:not-allowed;}
-  .ep-nav-mid{flex:1;display:flex;justify-content:center;}
-  .ep-nav-label{font-size:.8rem;font-weight:700;color:var(--accent2);letter-spacing:.3px;}
+  .ep-nav{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    padding:9px 10px;display:flex;flex-direction:column;gap:7px;}
+  .ep-nav-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .ep-nav-title{font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
+  .ep-nav-current{font-size:.76rem;font-weight:700;color:var(--accent2);}
+  .ep-nav-seasons{display:flex;gap:5px;flex-wrap:wrap;}
+  .ep-season-tab{background:var(--surface2);border:1px solid var(--border);color:var(--muted);
+    padding:3px 9px;border-radius:20px;font-size:.66rem;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;}
+  .ep-season-tab:hover{color:var(--text);border-color:var(--accent);}
+  .ep-season-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .ep-strip-scroll{display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;}
+  .ep-chip{flex-shrink:0;min-width:34px;height:34px;padding:0 8px;border-radius:8px;
+    background:var(--surface2);border:1px solid var(--border);color:var(--text);
+    font-size:.72rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:all .12s;}
+  .ep-chip:hover{border-color:var(--accent);color:var(--accent2);}
+  .ep-chip.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .ep-chip.loading{opacity:.5;cursor:wait;}
+  .ep-nav-loading{font-size:.68rem;color:var(--muted);padding:4px 0;}
 
   ::-webkit-scrollbar{width:4px;}
   ::-webkit-scrollbar-track{background:transparent;}
@@ -240,11 +251,13 @@
     </div>
 
     <div class="ep-nav" id="epNav" style="display:none;">
-      <button id="epPrevBtn" onclick="navEpisode(-1)">◀ Prev</button>
-      <div class="ep-nav-mid">
-        <span class="ep-nav-label" id="epNavLabel">S1 · E1</span>
+      <div class="ep-nav-head">
+        <span class="ep-nav-title">Episodes</span>
+        <span class="ep-nav-current" id="epNavCurrent">S1 · E1</span>
       </div>
-      <button id="epNextBtn" onclick="navEpisode(1)">Next ▶</button>
+      <div class="ep-nav-seasons" id="epNavSeasons"></div>
+      <div class="ep-strip-scroll" id="epStrip"></div>
+      <div class="ep-nav-loading" id="epNavLoading" style="display:none;">Loading episode list…</div>
     </div>
   </div>
 
@@ -423,22 +436,15 @@ function showDetectErr(msg) {
   errEl.className = 'ep-detect-err visible';
 }
 
-// ── Episode nav bar (prev/next) ───────────────────────────────────
-function updateEpNavVisibility() {
-  var mtype = document.getElementById('g-mtype').value;
-  var nav = document.getElementById('epNav');
-  if (mtype === 'tv') {
-    nav.style.display = 'flex';
-    updateEpNavLabel();
-  } else {
-    nav.style.display = 'none';
-  }
-}
+// ── Full episode navigation strip ─────────────────────────────────
+let epNavSelectedSeason = null; // which season tab is currently shown in the strip
+let epNavLoadToken = 0;         // guards against stale async loads overwriting a newer request
 
-function updateEpNavLabel() {
+function updateEpNavCurrentLabel() {
   var season  = document.getElementById('g-season').value  || '1';
   var episode = document.getElementById('g-episode').value || '1';
-  document.getElementById('epNavLabel').textContent = 'S' + season + ' · E' + episode;
+  document.getElementById('epNavCurrent').textContent = 'S' + season + ' · E' + episode;
+  highlightActiveChip();
 }
 
 async function getSeasonEpisodeCounts(tmdbId) {
@@ -454,60 +460,119 @@ async function getSeasonEpisodeCounts(tmdbId) {
   return out;
 }
 
-async function navEpisode(dir) {
+// Build/refresh the whole nav bar (season tabs + episode chips) for the current show.
+async function buildEpisodeNav(preserveSeasonSelection) {
   var tmdb = document.getElementById('g-tmdb').value.trim();
-  if (!tmdb) { hdrStatus('Enter a TMDB ID'); return; }
-  var season  = parseInt(document.getElementById('g-season').value, 10)  || 1;
-  var episode = parseInt(document.getElementById('g-episode').value, 10) || 1;
+  var nav  = document.getElementById('epNav');
+  if (!tmdb) { nav.style.display = 'none'; return; }
 
-  document.getElementById('epPrevBtn').disabled = true;
-  document.getElementById('epNextBtn').disabled = true;
-  hdrStatus('loading ' + (dir > 0 ? 'next' : 'previous') + ' episode…');
+  var myToken = ++epNavLoadToken;
+  var loadingEl = document.getElementById('epNavLoading');
+  loadingEl.style.display = 'block';
+  loadingEl.textContent = 'Loading episode list…';
+  document.getElementById('epStrip').innerHTML = '';
+  document.getElementById('epNavSeasons').innerHTML = '';
 
   try {
     var counts = await getSeasonEpisodeCounts(tmdb);
-    if (!counts.length) throw new Error('No season data');
+    if (myToken !== epNavLoadToken) return; // a newer request superseded this one
+    if (!counts.length) { loadingEl.textContent = 'No episode data found.'; return; }
 
-    var idx = counts.findIndex(function(s){ return s.season_number === season; });
-    if (idx === -1) idx = 0;
-
-    var newSeason = season, newEpisode = episode + dir;
-
-    if (newEpisode < 1) {
-      // go to previous season, last episode
-      if (idx > 0) {
-        idx -= 1;
-        newSeason  = counts[idx].season_number;
-        newEpisode = counts[idx].episode_count || 1;
-      } else {
-        newEpisode = 1; // already at first episode of first season
-      }
-    } else if (newEpisode > (counts[idx].episode_count || 1)) {
-      // go to next season, episode 1
-      if (idx < counts.length - 1) {
-        idx += 1;
-        newSeason  = counts[idx].season_number;
-        newEpisode = 1;
-      } else {
-        newEpisode = counts[idx].episode_count || episode; // already at last episode of last season
-      }
+    var currentSeason = parseInt(document.getElementById('g-season').value, 10) || counts[0].season_number;
+    if (!preserveSeasonSelection || !counts.some(function(s){ return s.season_number === epNavSelectedSeason; })) {
+      epNavSelectedSeason = currentSeason;
     }
 
-    document.getElementById('g-season').value  = newSeason;
-    document.getElementById('g-episode').value = newEpisode;
-    updateEpNavLabel();
-    clearDetectResult();
-    await fetchAll();
+    renderSeasonTabs(counts);
+    renderEpisodeChips(counts);
+    loadingEl.style.display = 'none';
+    updateEpNavCurrentLabel();
   } catch (e) {
-    hdrStatus('nav error: ' + (e.message || 'failed'));
-  } finally {
-    document.getElementById('epPrevBtn').disabled = false;
-    document.getElementById('epNextBtn').disabled = false;
+    if (myToken === epNavLoadToken) loadingEl.textContent = 'Failed to load episodes: ' + (e.message || 'error');
   }
 }
 
-document.getElementById('g-season').addEventListener('input', updateEpNavLabel);
-document.getElementById('g-episode').addEventListener('input', updateEpNavLabel);
+function renderSeasonTabs(counts) {
+  var wrap = document.getElementById('epNavSeasons');
+  wrap.innerHTML = '';
+  if (counts.length <= 1) return; // no need for tabs on single-season shows
+  counts.forEach(function(s) {
+    var tab = document.createElement('button');
+    tab.className = 'ep-season-tab' + (s.season_number === epNavSelectedSeason ? ' active' : '');
+    tab.textContent = 'S' + s.season_number;
+    tab.onclick = function() {
+      epNavSelectedSeason = s.season_number;
+      renderSeasonTabs(counts);
+      renderEpisodeChips(counts);
+    };
+    wrap.appendChild(tab);
+  });
+}
+
+function renderEpisodeChips(counts) {
+  var strip = document.getElementById('epStrip');
+  strip.innerHTML = '';
+  var seasonInfo = counts.find(function(s){ return s.season_number === epNavSelectedSeason; }) || counts[0];
+  var total = seasonInfo.episode_count || 0;
+  for (var ep = 1; ep <= total; ep++) {
+    (function(epNum) {
+      var chip = document.createElement('div');
+      chip.className = 'ep-chip';
+      chip.textContent = epNum;
+      chip.dataset.season  = seasonInfo.season_number;
+      chip.dataset.episode = epNum;
+      chip.onclick = function() { jumpToEpisode(seasonInfo.season_number, epNum, chip); };
+      strip.appendChild(chip);
+    })(ep);
+  }
+  highlightActiveChip();
+}
+
+function highlightActiveChip() {
+  var season  = parseInt(document.getElementById('g-season').value, 10)  || 1;
+  var episode = parseInt(document.getElementById('g-episode').value, 10) || 1;
+  document.querySelectorAll('.ep-chip').forEach(function(c) {
+    var isActive = parseInt(c.dataset.season, 10) === season && parseInt(c.dataset.episode, 10) === episode;
+    c.classList.toggle('active', isActive);
+  });
+  // scroll active chip into view
+  var active = document.querySelector('.ep-chip.active');
+  if (active) active.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+}
+
+async function jumpToEpisode(season, episode, chipEl) {
+  document.querySelectorAll('.ep-chip').forEach(function(c){ c.classList.remove('loading'); });
+  if (chipEl) chipEl.classList.add('loading');
+  document.getElementById('g-season').value  = season;
+  document.getElementById('g-episode').value = episode;
+  epMode = 'manual';
+  setEpModeSilently('manual');
+  updateEpNavCurrentLabel();
+  await fetchAll();
+  if (chipEl) chipEl.classList.remove('loading');
+}
+
+// Same as setEpMode but doesn't clobber the detect result areas unnecessarily / avoid recursive nav rebuilds
+function setEpModeSilently(mode) {
+  document.getElementById('tab-manual').classList.toggle('active', mode === 'manual');
+  document.getElementById('tab-abs').classList.toggle('active', mode === 'abs');
+  document.getElementById('ep-manual-block').style.display = mode === 'manual' ? '' : 'none';
+  document.getElementById('ep-abs-block').style.display    = mode === 'abs'    ? '' : 'none';
+}
+
+document.getElementById('g-season').addEventListener('change', function () { buildEpisodeNav(false); });
+document.getElementById('g-episode').addEventListener('input', updateEpNavCurrentLabel);
+
+function updateEpNavVisibility() {
+  var mtype = document.getElementById('g-mtype').value;
+  var nav = document.getElementById('epNav');
+  if (mtype === 'tv') {
+    nav.style.display = 'flex';
+    buildEpisodeNav(true);
+  } else {
+    nav.style.display = 'none';
+  }
+}
 
 // ── Unified fetch ─────────────────────────────────────────────────
 async function fetchAll() {

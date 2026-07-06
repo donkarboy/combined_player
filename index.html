@@ -58,6 +58,9 @@
   .adv-note{font-size:.65rem;color:var(--muted);}
 
   .media-wrap{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:16/9;width:100%;flex-shrink:0;}
+  .player-title{font-size:.85rem;font-weight:700;color:var(--text);padding:2px 2px;display:flex;align-items:center;gap:8px;}
+  .player-title .pt-show{color:var(--accent2);}
+  .player-title .pt-ep{color:var(--muted);font-weight:600;font-size:.78rem;}
   video{width:100%;height:100%;display:block;background:#000;}
   #iframe-player{width:100%;height:100%;border:none;display:none;background:#000;}
   .video-overlay{position:absolute;inset:0;display:flex;flex-direction:column;
@@ -174,6 +177,13 @@
   .ep-nav{background:var(--surface);border:1px solid var(--border);border-radius:10px;
     padding:9px 10px;display:flex;flex-direction:column;gap:7px;}
   .ep-nav-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .ep-nav-controls{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .ep-nav-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);
+    padding:6px 12px;border-radius:8px;font-size:.74rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .12s;}
+  .ep-nav-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent2);}
+  .ep-nav-btn:disabled{opacity:.35;cursor:not-allowed;}
+  .ep-autonext{display:flex;align-items:center;gap:5px;font-size:.68rem;color:var(--muted);cursor:pointer;user-select:none;}
+  .ep-autonext input{accent-color:var(--accent);cursor:pointer;}
   .ep-nav-title{font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
   .ep-nav-current{font-size:.76rem;font-weight:700;color:var(--accent2);}
   .ep-nav-seasons{display:flex;gap:5px;flex-wrap:wrap;}
@@ -237,6 +247,8 @@
       </div>
     </div>
 
+    <div class="player-title" id="playerTitle" style="display:none;"></div>
+
     <div class="media-wrap">
       <video id="vid" controls></video>
       <iframe id="iframe-player" allowfullscreen allow="autoplay; fullscreen; encrypted-media"></iframe>
@@ -254,6 +266,14 @@
       <div class="ep-nav-head">
         <span class="ep-nav-title">Episodes</span>
         <span class="ep-nav-current" id="epNavCurrent">S1 · E1</span>
+      </div>
+      <div class="ep-nav-controls">
+        <button class="ep-nav-btn" id="epPrevBtn" onclick="navRelative(-1)">◀ Prev</button>
+        <label class="ep-autonext">
+          <input type="checkbox" id="autoNextToggle" checked/>
+          <span>Auto-next</span>
+        </label>
+        <button class="ep-nav-btn" id="epNextBtn" onclick="navRelative(1)">Next ▶</button>
       </div>
       <div class="ep-nav-seasons" id="epNavSeasons"></div>
       <div class="ep-strip-scroll" id="epStrip"></div>
@@ -335,6 +355,9 @@ let activeFilter = 'all';
 let allStreams    = [];
 let epMode       = 'manual'; // 'manual' | 'abs'
 let seasonEpCache = {}; // tmdbId -> [{season_number, episode_count}]
+let showNameCache = {}; // tmdbId -> show name (from TMDB)
+let preferredStream = null; // {source, server, type} of last stream the user manually picked, reused across episodes
+let currentMediaType = 'movie'; // mirrors g-mtype for quick access in event handlers
 
 // ── Episode mode toggle ───────────────────────────────────────────
 function setEpMode(mode) {
@@ -361,6 +384,7 @@ async function tmdbGetAllSeasons(tmdbId) {
   const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error('TMDB HTTP ' + res.status);
   const data = await res.json();
+  if (data && data.name) showNameCache[tmdbId] = data.name;
   // Filter out specials (season 0) and return sorted
   const seasons = (data.seasons || []).filter(function(s){ return s.season_number > 0; });
   seasons.sort(function(a, b){ return a.season_number - b.season_number; });
@@ -552,8 +576,100 @@ async function jumpToEpisode(season, episode, chipEl) {
   epMode = 'manual';
   setEpModeSilently('manual');
   updateEpNavCurrentLabel();
+  updatePlayerTitle();
   await fetchAll();
+  autoSelectPreferredStream();
+  updateNavButtonStates();
   if (chipEl) chipEl.classList.remove('loading');
+}
+
+// Prev/Next buttons: move one episode at a time, crossing season boundaries.
+async function navRelative(dir) {
+  var tmdb = document.getElementById('g-tmdb').value.trim();
+  if (!tmdb) return;
+  document.getElementById('epPrevBtn').disabled = true;
+  document.getElementById('epNextBtn').disabled = true;
+  try {
+    var counts = await getSeasonEpisodeCounts(tmdb);
+    if (!counts.length) return;
+    var season  = parseInt(document.getElementById('g-season').value, 10)  || counts[0].season_number;
+    var episode = parseInt(document.getElementById('g-episode').value, 10) || 1;
+    var idx = counts.findIndex(function(s){ return s.season_number === season; });
+    if (idx === -1) idx = 0;
+
+    var newSeason = season, newEpisode = episode + dir;
+    if (newEpisode < 1) {
+      if (idx > 0) { idx -= 1; newSeason = counts[idx].season_number; newEpisode = counts[idx].episode_count || 1; }
+      else newEpisode = 1;
+    } else if (newEpisode > (counts[idx].episode_count || 1)) {
+      if (idx < counts.length - 1) { idx += 1; newSeason = counts[idx].season_number; newEpisode = 1; }
+      else newEpisode = counts[idx].episode_count || episode;
+    }
+
+    epNavSelectedSeason = newSeason;
+    renderSeasonTabs(counts);
+    renderEpisodeChips(counts);
+    await jumpToEpisode(newSeason, newEpisode, null);
+  } finally {
+    updateNavButtonStates();
+  }
+}
+
+// Disable Prev at the very first episode / Next at the very last episode of the show.
+async function updateNavButtonStates() {
+  var tmdb = document.getElementById('g-tmdb').value.trim();
+  var prevBtn = document.getElementById('epPrevBtn');
+  var nextBtn = document.getElementById('epNextBtn');
+  if (!tmdb || !seasonEpCache[tmdb]) { prevBtn.disabled = false; nextBtn.disabled = false; return; }
+  var counts  = seasonEpCache[tmdb];
+  var season  = parseInt(document.getElementById('g-season').value, 10)  || counts[0].season_number;
+  var episode = parseInt(document.getElementById('g-episode').value, 10) || 1;
+  var idx = counts.findIndex(function(s){ return s.season_number === season; });
+  prevBtn.disabled = (idx <= 0 && episode <= 1);
+  nextBtn.disabled = (idx >= counts.length - 1 && episode >= (counts[idx] ? counts[idx].episode_count : 1));
+}
+
+// ── Player title (show name + episode) ────────────────────────────
+function updatePlayerTitle() {
+  var titleEl = document.getElementById('playerTitle');
+  var mtype   = document.getElementById('g-mtype').value;
+  var tmdb    = document.getElementById('g-tmdb').value.trim();
+  if (mtype !== 'tv' || !tmdb) { titleEl.style.display = 'none'; return; }
+  var name    = showNameCache[tmdb] || 'TV Show';
+  var season  = document.getElementById('g-season').value  || '1';
+  var episode = document.getElementById('g-episode').value || '1';
+  titleEl.innerHTML = '<span class="pt-show">' + esc(name) + '</span><span class="pt-ep">S' + esc(season) + ' · E' + esc(episode) + '</span>';
+  titleEl.style.display = 'flex';
+}
+
+// ── Remember + reapply the user's preferred stream across episodes ─
+function rememberPreferredStream(s) {
+  preferredStream = { source: s.source, server: s.server, type: s.type };
+}
+
+// After fetching a new episode's sources, try to auto-select+play whichever
+// source/server the user was using before, so the "same stream" keeps playing.
+function autoSelectPreferredStream() {
+  if (!preferredStream || !allStreams.length) return;
+  var match = allStreams.find(function(s) {
+    return s.source === preferredStream.source && s.server === preferredStream.server;
+  });
+  if (!match) {
+    // fall back to same source, any server
+    match = allStreams.find(function(s) { return s.source === preferredStream.source; });
+  }
+  if (!match) return;
+
+  // Find (or fall back to creating) a DOM node for this stream to mark active or use directly.
+  var items = document.querySelectorAll('.stream-item');
+  var matchedEl = null;
+  items.forEach(function(el) { if (el.dataset.url === match.url) matchedEl = el; });
+
+  if (activeItem) activeItem.classList.remove('active');
+  activeItem = matchedEl;
+  if (matchedEl) matchedEl.classList.add('active');
+  document.getElementById('manualUrl').value = match.url;
+  loadMedia(match.url, match.type);
 }
 
 // Same as setEpMode but doesn't clobber the detect result areas unnecessarily / avoid recursive nav rebuilds
@@ -567,14 +683,16 @@ function setEpModeSilently(mode) {
 document.getElementById('g-season').addEventListener('change', function () { buildEpisodeNav(false); });
 document.getElementById('g-episode').addEventListener('input', updateEpNavCurrentLabel);
 
-function updateEpNavVisibility() {
+async function updateEpNavVisibility() {
   var mtype = document.getElementById('g-mtype').value;
   var nav = document.getElementById('epNav');
+  currentMediaType = mtype;
   if (mtype === 'tv') {
     nav.style.display = 'flex';
-    buildEpisodeNav(true);
+    await buildEpisodeNav(true);
   } else {
     nav.style.display = 'none';
+    document.getElementById('playerTitle').style.display = 'none';
   }
 }
 
@@ -618,7 +736,9 @@ async function fetchAll() {
   hdrStatus('fetching…');
   setChip('vn','pending'); setChip('va','pending');
   setChip('vr','pending'); setChip('vz','pending');
-  updateEpNavVisibility();
+  await updateEpNavVisibility();
+  updatePlayerTitle();
+  updateNavButtonStates();
 
   await Promise.all([
     fetchVidnest (tmdb, mtype, season, episode),
@@ -630,7 +750,16 @@ async function fetchAll() {
   document.getElementById('totalBadge').textContent = allStreams.length;
   hdrStatus(allStreams.length ? allStreams.length + ' streams' : 'no results');
   document.getElementById('g-btn').disabled = false;
+
+  if (mtype === 'tv') autoSelectPreferredStream();
 }
+
+document.getElementById('vid').addEventListener('ended', function() {
+  var autoNextOn = document.getElementById('autoNextToggle').checked;
+  if (autoNextOn && currentMediaType === 'tv') {
+    navRelative(1);
+  }
+});
 
 document.getElementById('g-mtype').addEventListener('change', function () {
   var isTv = this.value === 'tv';
@@ -941,7 +1070,7 @@ function renderItem(s) {
   item.querySelector('.copy-icon').addEventListener('click', function(e) {
     e.stopPropagation(); copyUrl(s.url, this);
   });
-  item.addEventListener('click', function() { playStream(s.url, s.type, item); });
+  item.addEventListener('click', function() { playStream(s.url, s.type, item, s); });
   group.appendChild(item);
 }
 
@@ -997,11 +1126,12 @@ function getHeaders() {
   };
 }
 
-function playStream(url, type, itemEl) {
+function playStream(url, type, itemEl, streamObj) {
   if (activeItem) activeItem.classList.remove('active');
   activeItem = itemEl;
   itemEl.classList.add('active');
   document.getElementById('manualUrl').value = url;
+  if (streamObj && currentMediaType === 'tv') rememberPreferredStream(streamObj);
   loadMedia(url, type);
 }
 function playManual() {

@@ -486,7 +486,7 @@ async function buildEpisodeNav(preserveSeasonSelection) {
     renderSeasonTabs(counts);
     renderEpisodeChips(counts);
     loadingEl.style.display = 'none';
-    updateEpNavCurrentLabel();
+    try { updateEpNavCurrentLabel(); } catch (e) { /* non-fatal cosmetic update */ }
   } catch (e) {
     if (myToken === epNavLoadToken) loadingEl.textContent = 'Failed to load episodes: ' + (e.message || 'error');
   }
@@ -535,9 +535,13 @@ function highlightActiveChip() {
     var isActive = parseInt(c.dataset.season, 10) === season && parseInt(c.dataset.episode, 10) === episode;
     c.classList.toggle('active', isActive);
   });
-  // scroll active chip into view
-  var active = document.querySelector('.ep-chip.active');
-  if (active) active.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  // scroll active chip into view (best-effort; not all environments support smooth scrollIntoView options)
+  try {
+    var active = document.querySelector('.ep-chip.active');
+    if (active && typeof active.scrollIntoView === 'function') {
+      active.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
+  } catch (e) { /* ignore scroll errors, chips are already rendered */ }
 }
 
 async function jumpToEpisode(season, episode, chipEl) {

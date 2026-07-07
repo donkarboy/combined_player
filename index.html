@@ -517,8 +517,8 @@ async function tmdbCheckIsAnime(tmdbId, mtype) {
     var data = await res.json();
     var genres = data.genres || [];
     var isAnim = genres.some(function(g){ return g.id === ANIME_GENRE_ID; });
-    // Also store title
-    var title = data.title || data.name || '';
+    // TV shows use data.name; movies use data.title — get whichever is present
+    var title = (data.title || data.name || '').trim();
     if (title) showNameCache[tmdbId] = title;
     animeDetectCache[cacheKey] = { isAnime: isAnim, title: title };
     return animeDetectCache[cacheKey];
@@ -528,7 +528,7 @@ async function tmdbCheckIsAnime(tmdbId, mtype) {
   }
 }
 
-// Title similarity: returns 0–1 (Jaccard on words + character overlap)
+// Title similarity: returns 0–1 (Jaccard on words + character bigram overlap)
 function titleSimilarity(a, b) {
   if (!a || !b) return 0;
   var normalize = function(s) {
@@ -560,68 +560,60 @@ function titleSimilarity(a, b) {
   return wordScore * 0.6 + charScore * 0.4;
 }
 
-// Find MAL ID from animeapi.my.id
-// tmdbTitle must be the SHOW's main title only (not an episode title)
+// ── FIX: findMalId ────────────────────────────────────────────────
+// The animeapi.my.id response uses "myanimelist" for the MAL ID and
+// "title" for the main romanized series title only.
+// We compare ONLY against data.title (the series title),
+// never against episode titles or fields that don't exist in this API.
 async function findMalId(tmdbId, mtype, tmdbTitle) {
   var cacheKey = 'mal_' + tmdbId + '_' + mtype;
   if (animeDetectCache[cacheKey] !== undefined) return animeDetectCache[cacheKey];
   try {
     var apiType = mtype === 'movie' ? 'movie' : 'tv';
     var apiUrl = ANIMEAPI_BASE + '/' + apiType + '/' + tmdbId;
-    var res = await fetch(apiUrl, { signal: AbortSignal.timeout(12000) });
+    var res = await fetch(apiUrl, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) {
-      // Try the other type as fallback
+      // Try the other type if the first fails
       var alt = apiType === 'tv' ? 'movie' : 'tv';
       var res2 = await fetch(ANIMEAPI_BASE + '/' + alt + '/' + tmdbId, { signal: AbortSignal.timeout(8000) });
       if (!res2.ok) { animeDetectCache[cacheKey] = null; return null; }
       res = res2;
     }
     var data = await res.json();
-    // myanimelist field can be 0 (falsy) for some entries, so check explicitly for null/undefined
-    if (!data || data.myanimelist == null) { animeDetectCache[cacheKey] = null; return null; }
 
-    var malId = data.myanimelist;
+    // "myanimelist" is the MAL ID field in this API — must be a non-null number
+    if (!data || data.myanimelist === undefined || data.myanimelist === null) {
+      animeDetectCache[cacheKey] = null;
+      return null;
+    }
+    var malId = data.myanimelist; // e.g. 20 for Naruto
 
-    // Collect all title candidates from the API response (this API uses "title" only, not title_english etc.)
-    // Also accept any string field that looks like a title
-    var apiTitleCandidates = [
-      data.title,
-      data.title_english,
-      data.title_romaji,
-      data.title_native,
-      data.title_japanese,
-    ].filter(function(t){ return t && typeof t === 'string'; });
+    // "title" is the ONLY series-level title field in this API.
+    // Do NOT use title_english / title_romaji / title_native — those fields
+    // belong to AniList/Kitsu and are not present here.
+    var apiSeriesTitle = (data.title || '').trim();
 
-    if (!apiTitleCandidates.length) {
-      // No title to verify — accept on TMDB ID match alone (the API looked up by tmdbId directly)
-      var result = { malId: malId, title: '(matched by ID)', score: 1 };
+    // If we have no TMDB title to compare against, trust the TMDB ID mapping.
+    if (!tmdbTitle) {
+      var result = { malId: malId, title: apiSeriesTitle, score: 1 };
       animeDetectCache[cacheKey] = result;
       return result;
     }
 
-    // Find best title match against the SHOW's main title
-    var bestScore = 0, bestTitle = apiTitleCandidates[0];
-    apiTitleCandidates.forEach(function(t) {
-      var s = titleSimilarity(tmdbTitle, t);
-      if (s > bestScore) { bestScore = s; bestTitle = t; }
-    });
+    // Compare the TMDB series title against the API's main series title only.
+    var score = titleSimilarity(tmdbTitle, apiSeriesTitle);
 
-    // Threshold: 80% similarity required
-    if (bestScore < 0.80) {
-      console.warn('[Anime] Title mismatch — TMDB title:', JSON.stringify(tmdbTitle),
-        '/ best API title:', JSON.stringify(bestTitle), '/ score:', bestScore.toFixed(2));
-      // Last resort: if the API returned the exact same tmdbId, trust it anyway
-      // (Some titles differ significantly in romanization, e.g. "Fullmetal" vs "Hagane no")
-      if (String(data.themoviedb) === String(tmdbId)) {
-        console.warn('[Anime] Accepting due to direct TMDB ID match despite title score');
-        bestScore = 0.80; // treat as passing
-      } else {
-        animeDetectCache[cacheKey] = null;
-        return null;
-      }
+    // Threshold of 0.60 handles romanisation differences like
+    // "Naruto: Shippuden" vs "Naruto Shippuuden", or
+    // "Fullmetal Alchemist: Brotherhood" vs "Hagane no Renkinjutsushi".
+    // Exact matches always score 1.0 (e.g. "Naruto" == "Naruto").
+    if (score < 0.60) {
+      console.warn('[Anime] Title mismatch — TMDB: "' + tmdbTitle + '" / API: "' + apiSeriesTitle + '" / score: ' + score.toFixed(2));
+      animeDetectCache[cacheKey] = null;
+      return null;
     }
 
-    var result = { malId: malId, title: bestTitle, score: bestScore };
+    var result = { malId: malId, title: apiSeriesTitle, score: score };
     animeDetectCache[cacheKey] = result;
     return result;
   } catch(e) {

@@ -560,55 +560,76 @@ function titleSimilarity(a, b) {
   return wordScore * 0.6 + charScore * 0.4;
 }
 
-// ── FIX: findMalId ────────────────────────────────────────────────
-// The animeapi.my.id response uses "myanimelist" for the MAL ID and
-// "title" for the main romanized series title only.
-// We compare ONLY against data.title (the series title),
-// never against episode titles or fields that don't exist in this API.
+// ── findMalId ─────────────────────────────────────────────────────
+// Fetches https://animeapi.my.id/themoviedb/{type}/{tmdbId}.
+// The response field "myanimelist" is the MAL ID (e.g. 1535 for Death Note).
+// The response field "title" is the ONLY series-level title — we compare
+// ONLY against this field, never against episode titles or other sources.
+//
+// animeapi.my.id does not send CORS headers that allow direct browser
+// fetches from non-same-origin pages, so we try direct first and fall
+// back through corsproxy.io → allorigins automatically.
 async function findMalId(tmdbId, mtype, tmdbTitle) {
   var cacheKey = 'mal_' + tmdbId + '_' + mtype;
   if (animeDetectCache[cacheKey] !== undefined) return animeDetectCache[cacheKey];
+
+  // Helper: fetch the animeapi URL, trying direct then two CORS proxies.
+  async function animeApiFetch(url) {
+    // 1. Try direct (works if the API sends Access-Control-Allow-Origin: *)
+    try {
+      var r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (r.ok) return r.json();
+    } catch(e) { /* CORS or network — fall through */ }
+    // 2. corsproxy.io
+    try {
+      var r2 = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
+      if (r2.ok) return r2.json();
+    } catch(e) { /* fall through */ }
+    // 3. allorigins
+    var r3 = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
+    if (!r3.ok) throw new Error('All fetch attempts failed for ' + url);
+    return r3.json();
+  }
+
   try {
     var apiType = mtype === 'movie' ? 'movie' : 'tv';
-    var apiUrl = ANIMEAPI_BASE + '/' + apiType + '/' + tmdbId;
-    var res = await fetch(apiUrl, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) {
-      // Try the other type if the first fails
-      var alt = apiType === 'tv' ? 'movie' : 'tv';
-      var res2 = await fetch(ANIMEAPI_BASE + '/' + alt + '/' + tmdbId, { signal: AbortSignal.timeout(8000) });
-      if (!res2.ok) { animeDetectCache[cacheKey] = null; return null; }
-      res = res2;
-    }
-    var data = await res.json();
+    var primaryUrl = ANIMEAPI_BASE + '/' + apiType + '/' + tmdbId;
+    var data = null;
 
-    // "myanimelist" is the MAL ID field in this API — must be a non-null number
+    try {
+      data = await animeApiFetch(primaryUrl);
+    } catch(e) {
+      // Try the alternate type (tv ↔ movie) before giving up
+      var altType = apiType === 'tv' ? 'movie' : 'tv';
+      data = await animeApiFetch(ANIMEAPI_BASE + '/' + altType + '/' + tmdbId);
+    }
+
+    // Require a valid numeric MAL ID in the "myanimelist" field
     if (!data || data.myanimelist === undefined || data.myanimelist === null) {
+      console.warn('[Anime] No myanimelist field in response for tmdb=' + tmdbId);
       animeDetectCache[cacheKey] = null;
       return null;
     }
-    var malId = data.myanimelist; // e.g. 20 for Naruto
+    var malId = data.myanimelist; // e.g. 1535
 
-    // "title" is the ONLY series-level title field in this API.
-    // Do NOT use title_english / title_romaji / title_native — those fields
-    // belong to AniList/Kitsu and are not present here.
+    // "title" is the main romanized series title — the ONLY field to match against.
     var apiSeriesTitle = (data.title || '').trim();
 
-    // If we have no TMDB title to compare against, trust the TMDB ID mapping.
+    // If we have no TMDB title, trust the TMDB→MAL ID mapping directly.
     if (!tmdbTitle) {
       var result = { malId: malId, title: apiSeriesTitle, score: 1 };
       animeDetectCache[cacheKey] = result;
       return result;
     }
 
-    // Compare the TMDB series title against the API's main series title only.
+    // Compare TMDB series title vs API series title only.
+    // "Death Note" vs "Death Note" → score 1.0 (exact)
+    // "Naruto: Shippuden" vs "Naruto Shippuuden" → score ~0.75
     var score = titleSimilarity(tmdbTitle, apiSeriesTitle);
+    console.log('[Anime] title match: TMDB="' + tmdbTitle + '" API="' + apiSeriesTitle + '" score=' + score.toFixed(2));
 
-    // Threshold of 0.60 handles romanisation differences like
-    // "Naruto: Shippuden" vs "Naruto Shippuuden", or
-    // "Fullmetal Alchemist: Brotherhood" vs "Hagane no Renkinjutsushi".
-    // Exact matches always score 1.0 (e.g. "Naruto" == "Naruto").
     if (score < 0.60) {
-      console.warn('[Anime] Title mismatch — TMDB: "' + tmdbTitle + '" / API: "' + apiSeriesTitle + '" / score: ' + score.toFixed(2));
+      console.warn('[Anime] Title mismatch below threshold — rejecting MAL ID ' + malId);
       animeDetectCache[cacheKey] = null;
       return null;
     }
@@ -617,7 +638,7 @@ async function findMalId(tmdbId, mtype, tmdbTitle) {
     animeDetectCache[cacheKey] = result;
     return result;
   } catch(e) {
-    console.warn('[Anime] API error:', e);
+    console.warn('[Anime] findMalId failed completely:', e.message || e);
     animeDetectCache[cacheKey] = null;
     return null;
   }

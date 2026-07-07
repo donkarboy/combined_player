@@ -217,6 +217,7 @@
   .anime-title-match{color:var(--muted);font-size:.66rem;}
   .anime-match-score{font-size:.6rem;padding:1px 6px;border-radius:3px;background:rgba(255,107,157,.2);color:var(--anime);font-weight:700;}
   .anime-warn{color:var(--warn);font-size:.66rem;}
+  .anime-tried-types{font-size:.62rem;color:var(--muted);font-family:var(--mono);}
 
   ::-webkit-scrollbar{width:4px;}
   ::-webkit-scrollbar-track{background:transparent;}
@@ -265,7 +266,7 @@
       </div>
     </div>
 
-    <!-- Anime info bar -->
+    <!-- Anime info bar — static structure, never innerHTML-replaced -->
     <div class="anime-info-bar" id="animeInfoBar">
       <div class="anime-info-row">
         <span style="color:var(--anime);font-weight:700;font-size:.72rem;">🎌 Anime Detected</span>
@@ -277,7 +278,13 @@
       <div class="anime-info-row">
         <span style="color:var(--muted);font-size:.66rem;">MAL ID:</span>
         <span class="anime-mal-id" id="animeMalId">—</span>
-        <span style="color:var(--muted);font-size:.66rem;">MegaPlay + FlixLoud servers added ↓</span>
+        <span class="anime-tried-types" id="animeTriedTypes"></span>
+      </div>
+      <div class="anime-info-row" id="animeWarnRow" style="display:none;">
+        <span class="anime-warn" id="animeWarnText"></span>
+      </div>
+      <div class="anime-info-row" style="color:var(--muted);font-size:.66rem;" id="animeHint" style="display:none;">
+        MegaPlay + FlixLoud servers added ↓
       </div>
     </div>
 
@@ -379,9 +386,9 @@
 'use strict';
 
 // ── TMDB API key ──────────────────────────────────────────────────
-const TMDB_API_KEY = '6fad3f86b8452ee232deb7977d7dcf58';
-const TMDB_BASE    = 'https://api.themoviedb.org/3';
-const ANIME_GENRE_ID = 16; // TMDB genre ID for Animation
+const TMDB_API_KEY  = '6fad3f86b8452ee232deb7977d7dcf58';
+const TMDB_BASE     = 'https://api.themoviedb.org/3';
+const ANIME_GENRE_ID = 16;
 const ANIMEAPI_BASE  = 'https://animeapi.my.id/themoviedb';
 
 // ── Global state ──────────────────────────────────────────────────
@@ -399,7 +406,7 @@ let currentMediaType = 'movie';
 // Anime state
 let currentMalId    = null;
 let isAnimeContent  = false;
-let animeDetectCache = {}; // tmdbId -> { malId, title, score } | null
+let animeDetectCache = {};
 
 // ── Episode mode toggle ───────────────────────────────────────────
 function setEpMode(mode) {
@@ -505,7 +512,6 @@ function showDetectErr(msg) {
 }
 
 // ── ANIME DETECTION ────────────────────────────────────────────────
-// Check if TMDB ID has "Animation" (genre 16) in its genre list
 async function tmdbCheckIsAnime(tmdbId, mtype) {
   var cacheKey = 'genres_' + tmdbId + '_' + mtype;
   if (animeDetectCache[cacheKey] !== undefined) return animeDetectCache[cacheKey];
@@ -513,11 +519,10 @@ async function tmdbCheckIsAnime(tmdbId, mtype) {
     var endpoint = mtype === 'movie' ? '/movie/' : '/tv/';
     var url = TMDB_BASE + endpoint + tmdbId + '?api_key=' + TMDB_API_KEY;
     var res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) { animeDetectCache[cacheKey] = false; return false; }
+    if (!res.ok) { animeDetectCache[cacheKey] = { isAnime: false, title: '' }; return animeDetectCache[cacheKey]; }
     var data = await res.json();
     var genres = data.genres || [];
     var isAnim = genres.some(function(g){ return g.id === ANIME_GENRE_ID; });
-    // TV shows use data.name; movies use data.title — get whichever is present
     var title = (data.title || data.name || '').trim();
     if (title) showNameCache[tmdbId] = title;
     animeDetectCache[cacheKey] = { isAnime: isAnim, title: title };
@@ -528,7 +533,6 @@ async function tmdbCheckIsAnime(tmdbId, mtype) {
   }
 }
 
-// Title similarity: returns 0–1 (Jaccard on words + character bigram overlap)
 function titleSimilarity(a, b) {
   if (!a || !b) return 0;
   var normalize = function(s) {
@@ -538,14 +542,12 @@ function titleSimilarity(a, b) {
   };
   var na = normalize(a), nb = normalize(b);
   if (na === nb) return 1;
-  // Word Jaccard
   var wa = new Set(na.split(' ').filter(Boolean));
   var wb = new Set(nb.split(' ').filter(Boolean));
   var intersection = 0;
   wa.forEach(function(w){ if (wb.has(w)) intersection++; });
   var union = wa.size + wb.size - intersection;
   var wordScore = union > 0 ? intersection / union : 0;
-  // Character bigram overlap
   var bigrams = function(s) {
     var bg = new Set();
     for (var i = 0; i < s.length - 1; i++) bg.add(s[i] + s[i+1]);
@@ -556,95 +558,112 @@ function titleSimilarity(a, b) {
   ba.forEach(function(bg){ if (bb.has(bg)) biInter++; });
   var biUnion = ba.size + bb.size - biInter;
   var charScore = biUnion > 0 ? biInter / biUnion : 0;
-  // weighted average
   return wordScore * 0.6 + charScore * 0.4;
 }
 
+// ── CORS-safe fetch for animeapi.my.id ───────────────────────────
+// Tries: direct → corsproxy.io → allorigins
+async function animeApiFetch(url) {
+  // 1. Direct
+  try {
+    var r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (r.ok) return r.json();
+  } catch(e) { /* CORS / network — continue */ }
+  // 2. corsproxy.io
+  try {
+    var r2 = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
+    if (r2.ok) return r2.json();
+  } catch(e) { /* continue */ }
+  // 3. allorigins
+  var r3 = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
+  if (!r3.ok) throw new Error('All proxy attempts failed for ' + url);
+  return r3.json();
+}
+
+// ── fetchAnimeApiByType ───────────────────────────────────────────
+// Fetches one specific type (movie|tv) from animeapi.
+// Returns { malId, apiTitle } on success, or null if no valid myanimelist field.
+async function fetchAnimeApiByType(tmdbId, apiType) {
+  var url = ANIMEAPI_BASE + '/' + apiType + '/' + tmdbId;
+  var data = await animeApiFetch(url);  // throws on total failure
+  if (!data || data.myanimelist === undefined || data.myanimelist === null) return null;
+  return {
+    malId:    data.myanimelist,
+    apiTitle: (data.title || '').trim(),
+  };
+}
+
 // ── findMalId ─────────────────────────────────────────────────────
-// Fetches https://animeapi.my.id/themoviedb/{type}/{tmdbId}.
-// The response field "myanimelist" is the MAL ID (e.g. 1535 for Death Note).
-// The response field "title" is the ONLY series-level title — we compare
-// ONLY against this field, never against episode titles or other sources.
-//
-// animeapi.my.id does not send CORS headers that allow direct browser
-// fetches from non-same-origin pages, so we try direct first and fall
-// back through corsproxy.io → allorigins automatically.
+// Strategy:
+//   1. Try the type that matches what the user selected (primary).
+//   2. If that returns no MAL ID, or the title score is below threshold,
+//      try the OTHER type (alternate).
+//   3. Accept whichever gives the best title score above 0.60.
+//   4. If tmdbTitle is empty, trust the mapping directly (score = 1).
 async function findMalId(tmdbId, mtype, tmdbTitle) {
   var cacheKey = 'mal_' + tmdbId + '_' + mtype;
   if (animeDetectCache[cacheKey] !== undefined) return animeDetectCache[cacheKey];
 
-  // Helper: fetch the animeapi URL, trying direct then two CORS proxies.
-  async function animeApiFetch(url) {
-    // 1. Try direct (works if the API sends Access-Control-Allow-Origin: *)
-    try {
-      var r = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      if (r.ok) return r.json();
-    } catch(e) { /* CORS or network — fall through */ }
-    // 2. corsproxy.io
-    try {
-      var r2 = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
-      if (r2.ok) return r2.json();
-    } catch(e) { /* fall through */ }
-    // 3. allorigins
-    var r3 = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
-    if (!r3.ok) throw new Error('All fetch attempts failed for ' + url);
-    return r3.json();
-  }
+  var primaryType = mtype === 'movie' ? 'movie' : 'tv';
+  var altType     = primaryType === 'movie' ? 'tv' : 'movie';
 
-  try {
-    var apiType = mtype === 'movie' ? 'movie' : 'tv';
-    var primaryUrl = ANIMEAPI_BASE + '/' + apiType + '/' + tmdbId;
-    var data = null;
-
-    try {
-      data = await animeApiFetch(primaryUrl);
-    } catch(e) {
-      // Try the alternate type (tv ↔ movie) before giving up
-      var altType = apiType === 'tv' ? 'movie' : 'tv';
-      data = await animeApiFetch(ANIMEAPI_BASE + '/' + altType + '/' + tmdbId);
-    }
-
-    // Require a valid numeric MAL ID in the "myanimelist" field
-    if (!data || data.myanimelist === undefined || data.myanimelist === null) {
-      console.warn('[Anime] No myanimelist field in response for tmdb=' + tmdbId);
-      animeDetectCache[cacheKey] = null;
-      return null;
-    }
-    var malId = data.myanimelist; // e.g. 1535
-
-    // "title" is the main romanized series title — the ONLY field to match against.
-    var apiSeriesTitle = (data.title || '').trim();
-
-    // If we have no TMDB title, trust the TMDB→MAL ID mapping directly.
+  // Helper: score a candidate
+  function scoreCandidate(candidate) {
+    if (!candidate) return null;
     if (!tmdbTitle) {
-      var result = { malId: malId, title: apiSeriesTitle, score: 1 };
-      animeDetectCache[cacheKey] = result;
-      return result;
+      // No title to compare — trust the mapping
+      return { malId: candidate.malId, title: candidate.apiTitle, score: 1, usedType: candidate.usedType };
     }
-
-    // Compare TMDB series title vs API series title only.
-    // "Death Note" vs "Death Note" → score 1.0 (exact)
-    // "Naruto: Shippuden" vs "Naruto Shippuuden" → score ~0.75
-    var score = titleSimilarity(tmdbTitle, apiSeriesTitle);
-    console.log('[Anime] title match: TMDB="' + tmdbTitle + '" API="' + apiSeriesTitle + '" score=' + score.toFixed(2));
-
-    if (score < 0.60) {
-      console.warn('[Anime] Title mismatch below threshold — rejecting MAL ID ' + malId);
-      animeDetectCache[cacheKey] = null;
-      return null;
-    }
-
-    var result = { malId: malId, title: apiSeriesTitle, score: score };
-    animeDetectCache[cacheKey] = result;
-    return result;
-  } catch(e) {
-    console.warn('[Anime] findMalId failed completely:', e.message || e);
-    animeDetectCache[cacheKey] = null;
-    return null;
+    var score = titleSimilarity(tmdbTitle, candidate.apiTitle);
+    console.log('[Anime] ' + candidate.usedType + ' title match: TMDB="' + tmdbTitle + '" API="' + candidate.apiTitle + '" score=' + score.toFixed(2));
+    if (score < 0.60) return null;
+    return { malId: candidate.malId, title: candidate.apiTitle, score: score, usedType: candidate.usedType };
   }
+
+  // ── Step 1: primary type ──────────────────────────────────────
+  var primaryCandidate = null;
+  try {
+    var raw = await fetchAnimeApiByType(tmdbId, primaryType);
+    if (raw) primaryCandidate = { malId: raw.malId, apiTitle: raw.apiTitle, usedType: primaryType };
+  } catch(e) {
+    console.warn('[Anime] primary (' + primaryType + ') fetch failed:', e.message);
+  }
+
+  var primaryResult = scoreCandidate(primaryCandidate);
+  if (primaryResult) {
+    // Primary succeeded — cache and return
+    console.log('[Anime] Accepted via ' + primaryType + ' type (score=' + primaryResult.score.toFixed(2) + ')');
+    animeDetectCache[cacheKey] = primaryResult;
+    return primaryResult;
+  }
+
+  // ── Step 2: alternate type ────────────────────────────────────
+  console.log('[Anime] Primary type "' + primaryType + '" had no usable result — trying alt type "' + altType + '"');
+  var altCandidate = null;
+  try {
+    var rawAlt = await fetchAnimeApiByType(tmdbId, altType);
+    if (rawAlt) altCandidate = { malId: rawAlt.malId, apiTitle: rawAlt.apiTitle, usedType: altType };
+  } catch(e) {
+    console.warn('[Anime] alt (' + altType + ') fetch failed:', e.message);
+  }
+
+  var altResult = scoreCandidate(altCandidate);
+  if (altResult) {
+    console.log('[Anime] Accepted via alt type "' + altType + '" (score=' + altResult.score.toFixed(2) + ')');
+    animeDetectCache[cacheKey] = altResult;
+    return altResult;
+  }
+
+  // ── Step 3: both failed ───────────────────────────────────────
+  var reason = 'No usable MAL ID found';
+  if (primaryCandidate && !primaryResult) reason = 'Title mismatch on both types';
+  else if (!primaryCandidate && !altCandidate) reason = 'API returned no data for either type';
+  console.warn('[Anime] findMalId failed:', reason);
+  animeDetectCache[cacheKey] = null;
+  return null;
 }
 
-// Main anime resolution — run during fetchAll
+// ── resolveAnime ──────────────────────────────────────────────────
 async function resolveAnime(tmdbId, mtype) {
   currentMalId   = null;
   isAnimeContent = false;
@@ -674,45 +693,45 @@ async function resolveAnime(tmdbId, mtype) {
   return malInfo.malId;
 }
 
+// ── Anime info bar helpers (DOM-safe, no innerHTML replacement) ───
 function showAnimeInfo(malInfo) {
   document.getElementById('animeInfoBar').classList.add('visible');
   document.getElementById('anime-badge').classList.add('visible');
   document.getElementById('animeMalId').textContent = malInfo.malId;
   document.getElementById('animeMatchTitle').textContent = 'Matched: "' + malInfo.title + '"';
   document.getElementById('animeMatchScore').textContent = Math.round(malInfo.score * 100) + '% match';
+  // Show which API type was ultimately used
+  if (malInfo.usedType) {
+    document.getElementById('animeTriedTypes').textContent = '[via ' + malInfo.usedType + ']';
+  }
+  document.getElementById('animeHint').style.display = '';
+  document.getElementById('animeWarnRow').style.display = 'none';
 }
 function showAnimeWarn(msg) {
   document.getElementById('animeInfoBar').classList.add('visible');
-  document.getElementById('animeInfoBar').innerHTML +=
-    '<div class="anime-info-row"><span class="anime-warn">⚠ ' + esc(msg) + '</span></div>';
+  document.getElementById('animeWarnText').textContent = '⚠ ' + msg;
+  document.getElementById('animeWarnRow').style.display = '';
+  document.getElementById('animeHint').style.display = 'none';
 }
 function hideAnimeInfo() {
-  var bar = document.getElementById('animeInfoBar');
-  bar.classList.remove('visible');
-  bar.innerHTML = [
-    '<div class="anime-info-row">',
-      '<span style="color:var(--anime);font-weight:700;font-size:.72rem;">🎌 Anime Detected</span>',
-      '<span class="anime-match-score" id="animeMatchScore"></span>',
-    '</div>',
-    '<div class="anime-info-row"><span class="anime-title-match" id="animeMatchTitle"></span></div>',
-    '<div class="anime-info-row">',
-      '<span style="color:var(--muted);font-size:.66rem;">MAL ID:</span>',
-      '<span class="anime-mal-id" id="animeMalId">—</span>',
-      '<span style="color:var(--muted);font-size:.66rem;">MegaPlay + FlixLoud servers added ↓</span>',
-    '</div>',
-  ].join('');
+  // Reset all dynamic content without destroying DOM structure
+  document.getElementById('animeInfoBar').classList.remove('visible');
   document.getElementById('anime-badge').classList.remove('visible');
+  document.getElementById('animeMalId').textContent      = '—';
+  document.getElementById('animeMatchTitle').textContent = '';
+  document.getElementById('animeMatchScore').textContent = '';
+  document.getElementById('animeTriedTypes').textContent = '';
+  document.getElementById('animeWarnRow').style.display  = 'none';
+  document.getElementById('animeWarnText').textContent   = '';
+  document.getElementById('animeHint').style.display     = 'none';
 }
 
-// Add anime embed streams once MAL ID is known
+// ── Anime streams ─────────────────────────────────────────────────
 function addAnimeStreams(malId, episode) {
   var ep = parseInt(episode, 10) || 1;
-  // MegaPlay — supports dub/sub via URL
   var megaPlayDub = 'https://srtfile.github.io/megaplay_buzz_iframe_player/mal/' + malId + '/' + ep + '/dub/';
   var megaPlaySub = 'https://srtfile.github.io/megaplay_buzz_iframe_player/mal/' + malId + '/' + ep + '/sub/';
-  // FlixLoud — season hardcoded to 1 for absolute episode numbering (typical anime)
   var flixLoud    = 'https://donkarboy.github.io/flixloud/' + malId + '/1/';
-
   pushStream({ source:'anime', server:'MegaPlay', pill:'anime', label:'MegaPlay Dub', url: megaPlayDub, type:'embed' });
   pushStream({ source:'anime', server:'MegaPlay', pill:'anime', label:'MegaPlay Sub', url: megaPlaySub, type:'embed' });
   pushStream({ source:'anime', server:'FlixLoud', pill:'anime', label:'FlixLoud',     url: flixLoud,    type:'embed' });
@@ -963,10 +982,8 @@ async function fetchAll() {
   updatePlayerTitle();
   updateNavButtonStates();
 
-  // Run anime detection in parallel with all other fetches
   var animePromise = resolveAnime(tmdb, mtype).then(function(malId) {
     if (malId) {
-      // For movies use episode 1; for TV use the current episode
       var ep = mtype === 'tv' ? (document.getElementById('g-episode').value || '1') : '1';
       addAnimeStreams(malId, ep);
     }
@@ -1344,12 +1361,10 @@ function isEmbedUrl(url) {
       'embed.su','multiembed.mov','2embed.cc','smashystream.com','moviesapi.club',
       'vidfast.pro','vidnest.fun','warezcdn.link','frembed.hair','filemoon.sx',
       'vaplayer.ru','vidrock.ru','vidzee.wtf',
-      // Anime embed hosts
       'srtfile.github.io','donkarboy.github.io',
     ];
     if (hosts.some(function(e){ return h.includes(e); })) return true;
     if (new URL(url).pathname.includes('/embed/')) return true;
-    // github.io players are always embeds
     if (h.endsWith('.github.io')) return true;
   } catch(e) {}
   return false;

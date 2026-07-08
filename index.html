@@ -12,6 +12,7 @@
     --accent:#6c63ff; --accent2:#a78bfa; --text:#e2e8f0; --muted:#64748b;
     --ok:#4ade80; --err:#f87171; --warn:#fb923c;
     --tv:#f59e42; --rock:#38bdf8; --vidzee:#c084fc; --anime:#ff6b9d;
+    --vnapahe:#f472b6;
     --mono:'JetBrains Mono','Fira Code',monospace;
   }
   *{margin:0;padding:0;box-sizing:border-box;}
@@ -158,6 +159,7 @@
   .srv-vr{background:rgba(56,189,248,.15);color:var(--rock);}
   .srv-vz{background:rgba(192,132,252,.15);color:var(--vidzee);}
   .srv-anime{background:rgba(255,107,157,.15);color:var(--anime);}
+  .srv-vnapahe{background:rgba(244,114,182,.18);color:var(--vnapahe);}
 
   .stream-item{display:flex;align-items:center;gap:5px;padding:6px 7px;border-radius:7px;
     cursor:pointer;border:1px solid transparent;transition:all .12s;}
@@ -174,6 +176,7 @@
   .tag-rock{background:#0a1a24;color:var(--rock);}
   .tag-vidzee{background:#1a0a2a;color:var(--vidzee);}
   .tag-anime{background:rgba(255,107,157,.15);color:var(--anime);}
+  .tag-vnapahe{background:rgba(244,114,182,.18);color:var(--vnapahe);}
   .stream-url-text{font-size:.63rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}
   .stream-item.active .stream-url-text{color:var(--accent2);}
   .play-icon{flex-shrink:0;color:var(--accent);font-size:.72rem;opacity:0;}
@@ -217,6 +220,14 @@
   .anime-mal-id{font-family:var(--mono);font-size:.68rem;color:var(--anime);font-weight:700;}
   .anime-tried-types{font-size:.62rem;color:var(--muted);font-family:var(--mono);}
   .anime-warn{color:var(--warn);font-size:.66rem;}
+
+  /* VidNest AnimePahe info bar */
+  .vnapahe-info-bar{display:none;background:rgba(244,114,182,.07);border:1px solid rgba(244,114,182,.25);
+    border-radius:8px;padding:7px 12px;font-size:.7rem;gap:6px;flex-direction:column;}
+  .vnapahe-info-bar.visible{display:flex;}
+  .vnapahe-info-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .vnapahe-mal-id{font-family:var(--mono);font-size:.68rem;color:var(--vnapahe);font-weight:700;}
+  .vnapahe-warn{color:var(--warn);font-size:.66rem;}
 
   ::-webkit-scrollbar{width:4px;}
   ::-webkit-scrollbar-track{background:transparent;}
@@ -277,7 +288,23 @@
         <span class="anime-warn" id="animeWarnText"></span>
       </div>
       <div class="anime-info-row" style="color:var(--muted);font-size:.66rem;" id="animeHint">
-        MegaPlay + FlixLoud servers added &#8595;
+        MegaPlay + FlixLoud + VidNestAnimePahe servers added &#8595;
+      </div>
+    </div>
+
+    <!-- VidNest AnimePahe standalone info bar -->
+    <div class="vnapahe-info-bar" id="vnapaheInfoBar">
+      <div class="vnapahe-info-row">
+        <span style="color:var(--vnapahe);font-weight:700;font-size:.72rem;">&#127800; VidNestAnimePahe</span>
+        <span style="color:var(--muted);font-size:.66rem;">MAL ID:</span>
+        <span class="vnapahe-mal-id" id="vnapaheMalId">&mdash;</span>
+        <span style="font-size:.62rem;color:var(--muted);font-family:var(--mono);" id="vnapaheStatus"></span>
+      </div>
+      <div class="vnapahe-info-row" id="vnapaheWarnRow" style="display:none;">
+        <span class="vnapahe-warn" id="vnapaheWarnText"></span>
+      </div>
+      <div class="vnapahe-info-row" style="color:var(--muted);font-size:.66rem;">
+        AnimePahe streams via new.vidnest.fun &#8595;
       </div>
     </div>
 
@@ -336,14 +363,12 @@
         <button class="ep-mode-tab active" id="tab-manual" onclick="setEpMode('manual')">Season / Ep</button>
         <button class="ep-mode-tab" id="tab-abs" onclick="setEpMode('abs')">Absolute Ep#</button>
       </div>
-
       <div id="ep-manual-block">
         <div class="ep-manual-row">
           <input id="g-season"  type="number" placeholder="Season"  value="1" min="1"/>
           <input id="g-episode" type="number" placeholder="Episode" value="1" min="1"/>
         </div>
       </div>
-
       <div id="ep-abs-block" style="display:none;">
         <div class="ep-abs-row">
           <input id="g-abs-ep" type="number" placeholder="Absolute episode number (e.g. 399)" min="1"/>
@@ -360,17 +385,19 @@
       <div class="src-chip" id="chip-va"><span class="chip-dot"></span>VAPlayer</div>
       <div class="src-chip" id="chip-vr"><span class="chip-dot"></span>VidRock</div>
       <div class="src-chip" id="chip-vz"><span class="chip-dot"></span>Vidzee</div>
+      <div class="src-chip" id="chip-vnapahe"><span class="chip-dot"></span>&#127800; VNAnimePahe</div>
       <div class="src-chip" id="chip-anime"><span class="chip-dot"></span>&#127820; Anime</div>
     </div>
 
     <!-- Filter tabs -->
     <div class="filter-tabs" id="filterTabs">
-      <div class="filter-tab active" data-src="all"       onclick="filterBy(this)">All</div>
-      <div class="filter-tab"        data-src="vidnest"   onclick="filterBy(this)">&#9889; VidNest</div>
-      <div class="filter-tab"        data-src="vaplayer"  onclick="filterBy(this)">&#127916; VAPlayer</div>
-      <div class="filter-tab"        data-src="vidrock"   onclick="filterBy(this)">&#129395; VidRock</div>
-      <div class="filter-tab"        data-src="vidzee"    onclick="filterBy(this)">&#128302; Vidzee</div>
-      <div class="filter-tab"        data-src="anime"     onclick="filterBy(this)">&#127820; Anime</div>
+      <div class="filter-tab active" data-src="all"            onclick="filterBy(this)">All</div>
+      <div class="filter-tab"        data-src="vidnest"        onclick="filterBy(this)">&#9889; VidNest</div>
+      <div class="filter-tab"        data-src="vaplayer"       onclick="filterBy(this)">&#127916; VAPlayer</div>
+      <div class="filter-tab"        data-src="vidrock"        onclick="filterBy(this)">&#129395; VidRock</div>
+      <div class="filter-tab"        data-src="vidzee"         onclick="filterBy(this)">&#128302; Vidzee</div>
+      <div class="filter-tab"        data-src="vidnestanimepahe" onclick="filterBy(this)">&#127800; VNAnimePahe</div>
+      <div class="filter-tab"        data-src="anime"          onclick="filterBy(this)">&#127820; Anime</div>
     </div>
 
     <div class="stream-list" id="streamList"></div>
@@ -384,6 +411,25 @@ const TMDB_API_KEY   = '6fad3f86b8452ee232deb7977d7dcf58';
 const TMDB_BASE      = 'https://api.themoviedb.org/3';
 const ANIME_GENRE_ID = 16;
 const ANIMEAPI_BASE  = 'https://animeapi.my.id/themoviedb';
+
+// ── VidNest AnimePahe constants ───────────────────────────────────
+// Uses new.vidnest.fun/hianime/anime/{malId}/{episode}/{lang}
+// Same custom-alphabet decrypt as VidNest main; same proxy waterfall.
+const VNA_API_BASE  = 'https://new.vidnest.fun/hianime/anime';
+const VNA_REFERER   = 'https://vidnest.fun/';
+const VNA_HLS_HDR   = encodeURIComponent(JSON.stringify({
+  'origin':     'https://megaplay.buzz',
+  'referer':    'https://megaplay.buzz/',
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+}));
+
+// Proxy waterfall used by VidNestAnimePahe (same pattern as document 2)
+const VNA_PROXIES = [
+  { name:'animanga', fn: function(u){ return 'https://upcloud.animanga.fun/fetch?url=' + encodeURIComponent(u) + '&ref=' + encodeURIComponent(VNA_REFERER); } },
+  { name:'worker',   fn: function(u){ return 'https://purple-meadow-7b37.vidnest-1.workers.dev/fetch?url=' + encodeURIComponent(u) + '&ref=' + encodeURIComponent(VNA_REFERER); } },
+  { name:'corsproxy',fn: function(u){ return 'https://corsproxy.io/?url=' + encodeURIComponent(u); } },
+  { name:'allorigins',fn:function(u){ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); } },
+];
 
 let hlsPlayer        = null;
 let activeItem       = null;
@@ -545,6 +591,7 @@ async function fetchAnimeApiByType(tmdbId, apiType) {
   return { malId: data.myanimelist, usedType: apiType };
 }
 
+// Shared MAL ID resolver
 async function findMalId(tmdbId, mtype) {
   var cacheKey = 'mal_' + tmdbId + '_' + mtype;
   if (malIdCache[cacheKey] !== undefined) return malIdCache[cacheKey];
@@ -604,7 +651,217 @@ function hideAnimeInfo() {
   document.getElementById('animeHint').style.display     = 'none';
 }
 
-// ── Anime streams ─────────────────────────────────────────────────
+// ── VidNest AnimePahe info bar ────────────────────────────────────
+function showVnapaheInfo(malId, usedType) {
+  document.getElementById('vnapaheInfoBar').classList.add('visible');
+  document.getElementById('vnapaheMalId').textContent = malId;
+  document.getElementById('vnapaheStatus').textContent = usedType ? '[via ' + usedType + ']' : '';
+  document.getElementById('vnapaheWarnRow').style.display = 'none';
+}
+function showVnapaheWarn(msg) {
+  document.getElementById('vnapaheInfoBar').classList.add('visible');
+  document.getElementById('vnapaheWarnText').textContent = '\u26A0 ' + msg;
+  document.getElementById('vnapaheWarnRow').style.display = '';
+}
+function hideVnapaheInfo() {
+  document.getElementById('vnapaheInfoBar').classList.remove('visible');
+  document.getElementById('vnapaheMalId').textContent     = '\u2014';
+  document.getElementById('vnapaheStatus').textContent    = '';
+  document.getElementById('vnapaheWarnRow').style.display = 'none';
+  document.getElementById('vnapaheWarnText').textContent  = '';
+}
+
+// ── VidNest AnimePahe — core decrypt (shared alphabet) ───────────
+// Identical algorithm to the main VidNest decoder used in fetchVidnest().
+// Kept separate so VNA can be changed independently without touching VidNest.
+const VNA_ALPHABET = 'RB0fpH8ZEyVLkv7c2i6MAJ5u3IKFDxlS1NTsnGaqmXYdUrtzjwObCgQP94hoeW+/=';
+function vnaDecrypt(data) {
+  var lut = {};
+  for (var i = 0; i < VNA_ALPHABET.length; i++) lut[VNA_ALPHABET[i]] = i;
+  data = data.replace(/\s+/g, '');
+  var out = [];
+  for (var i = 0; i < data.length; i += 4) {
+    var chunk = (data.slice(i, i + 4) + '====').slice(0, 4);
+    var d = chunk.split('').map(function(c){ return (c in lut) ? lut[c] : 64; });
+    out.push((d[0] << 2) | (d[1] >> 4));
+    if (d[2] !== 64) out.push(((d[1] & 15) << 4) | (d[2] >> 2));
+    if (d[3] !== 64) out.push(((d[2] & 3)  << 6) | d[3]);
+  }
+  return JSON.parse(new TextDecoder().decode(new Uint8Array(out)));
+}
+
+// ── VidNest AnimePahe — proxy fetch waterfall ────────────────────
+// Tries animanga → worker → corsproxy → allorigins in order.
+async function vnaProxyFetch(apiUrl) {
+  var errs = [];
+  for (var i = 0; i < VNA_PROXIES.length; i++) {
+    var p = VNA_PROXIES[i];
+    try {
+      var r = await fetch(p.fn(apiUrl), { signal: AbortSignal.timeout(15000) });
+      if (r.ok) {
+        var json = await r.json();
+        if (json && json.data) {
+          console.log('[VNAnimePahe] proxy OK:', p.name);
+          return { json: json, proxy: p.name };
+        }
+        errs.push(p.name + ': no data field');
+      } else {
+        errs.push(p.name + ': HTTP ' + r.status);
+      }
+    } catch(ex) {
+      errs.push(p.name + ': ' + ex.message);
+    }
+  }
+  throw new Error('All VNA proxies failed — ' + errs.join('; '));
+}
+
+// ── VidNest AnimePahe — build proxied stream URLs ────────────────
+// Returns the three proxy variants shown in document 2's streamUrls().
+function vnaProxiedUrls(m3u8) {
+  return {
+    direct:   m3u8,
+    animanga: 'https://upcloud.animanga.fun/proxy?url=' + encodeURIComponent(m3u8) + '&headers=' + VNA_HLS_HDR,
+    worker:   'https://purple-meadow-7b37.vidnest-1.workers.dev/fetch?url=' + encodeURIComponent(m3u8) + '&ref=' + encodeURIComponent('https://megaplay.buzz/'),
+  };
+}
+
+// ── VidNest AnimePahe — fetch one lang and push streams ──────────
+// source tag is 'vidnestanimepahe' (standalone) or 'anime' (genre flow).
+async function vnaFetchLang(malId, episode, lang, sourceTag) {
+  var apiUrl = VNA_API_BASE + '/' + malId + '/' + episode + '/' + lang;
+  console.log('[VNAnimePahe] Fetching:', apiUrl, 'lang:', lang);
+
+  var result;
+  try {
+    result = await vnaProxyFetch(apiUrl);
+  } catch(ex) {
+    console.warn('[VNAnimePahe] All proxies failed for lang=' + lang + ':', ex.message);
+    return 0;
+  }
+
+  var payload;
+  try {
+    payload = vnaDecrypt(result.json.data);
+  } catch(ex) {
+    // If decrypt fails, try treating data as plain JSON object
+    try {
+      payload = (typeof result.json.data === 'object')
+        ? result.json.data
+        : JSON.parse(result.json.data);
+    } catch(ex2) {
+      console.warn('[VNAnimePahe] Decrypt/parse failed for lang=' + lang + ':', ex2.message);
+      return 0;
+    }
+  }
+
+  var sources = payload.sources || [];
+  if (!sources.length) {
+    console.warn('[VNAnimePahe] No sources in payload for lang=' + lang);
+    return 0;
+  }
+
+  var L = lang.toUpperCase();
+  var added = 0;
+  var proxied = vnaProxiedUrls(sources[0].file);
+
+  // Push direct stream
+  pushStream({
+    source: sourceTag,
+    server: 'VidNestAnimePahe\u00B7' + L,
+    pill:   'vnapahe',
+    label:  'AnimePahe ' + L + ' Direct',
+    url:    proxied.direct,
+    type:   'hls',
+  });
+  added++;
+
+  // Push animanga-proxied stream
+  pushStream({
+    source: sourceTag,
+    server: 'VidNestAnimePahe\u00B7' + L,
+    pill:   'vnapahe',
+    label:  'AnimePahe ' + L + ' Animanga',
+    url:    proxied.animanga,
+    type:   'hls',
+  });
+  added++;
+
+  // Push worker-proxied stream
+  pushStream({
+    source: sourceTag,
+    server: 'VidNestAnimePahe\u00B7' + L,
+    pill:   'vnapahe',
+    label:  'AnimePahe ' + L + ' Worker',
+    url:    proxied.worker,
+    type:   'hls',
+  });
+  added++;
+
+  // If multiple quality levels exist, push them too
+  if (sources.length > 1) {
+    for (var q = 1; q < sources.length; q++) {
+      var qLabel = sources[q].label || ('Q' + q);
+      pushStream({
+        source: sourceTag,
+        server: 'VidNestAnimePahe\u00B7' + L,
+        pill:   'vnapahe',
+        label:  'AnimePahe ' + L + ' ' + qLabel,
+        url:    sources[q].file,
+        type:   'hls',
+      });
+      added++;
+    }
+  }
+
+  console.log('[VNAnimePahe] Added ' + added + ' streams for lang=' + lang + ', proxy=' + result.proxy);
+  return added;
+}
+
+// ── VidNest AnimePahe STANDALONE source ──────────────────────────
+// Always runs independently. Resolves MAL ID then fetches sub + dub.
+async function fetchVidNestAnimePahe(tmdbId, mtype, episode) {
+  hideVnapaheInfo();
+  setChip('vnapahe', 'pending');
+  var ep = parseInt(episode, 10) || 1;
+
+  var malInfo = null;
+  try { malInfo = await findMalId(tmdbId, mtype); } catch(e) { console.warn('[VNAnimePahe] MAL lookup failed', e); }
+
+  if (!malInfo) {
+    setChip('vnapahe', 'err');
+    showVnapaheWarn('No MAL ID found for TMDB ' + tmdbId + ' \u2014 no VidNestAnimePahe streams');
+    return;
+  }
+
+  showVnapaheInfo(malInfo.malId, malInfo.usedType);
+
+  var results = await Promise.all([
+    vnaFetchLang(malInfo.malId, ep, 'dub', 'vidnestanimepahe').catch(function(){ return 0; }),
+    vnaFetchLang(malInfo.malId, ep, 'sub', 'vidnestanimepahe').catch(function(){ return 0; }),
+  ]);
+
+  var total = results[0] + results[1];
+  if (total > 0) {
+    console.log('[VNAnimePahe] Standalone: ' + total + ' streams, MAL=' + malInfo.malId + ' Ep=' + ep);
+    setChip('vnapahe', 'done');
+  } else {
+    setChip('vnapahe', 'err');
+    showVnapaheWarn('MAL ID ' + malInfo.malId + ' found but no streams for Ep ' + ep);
+  }
+}
+
+// ── VidNest AnimePahe ANIME GENRE flow ───────────────────────────
+// Called when genre detection confirms anime; uses 'anime' source tag
+// so streams appear in the Anime filter alongside MegaPlay/FlixLoud.
+async function addVidNestAnimeStreams(malId, episode) {
+  var ep = parseInt(episode, 10) || 1;
+  await Promise.all([
+    vnaFetchLang(malId, ep, 'dub', 'anime').catch(function(){}),
+    vnaFetchLang(malId, ep, 'sub', 'anime').catch(function(){}),
+  ]);
+}
+
+// ── Anime streams (genre-detected) ───────────────────────────────
 async function addAnimeStreams(malId, episode) {
   var ep = parseInt(episode, 10) || 1;
   pushStream({ source:'anime', server:'MegaPlay', pill:'anime', label:'MegaPlay Dub',
@@ -613,6 +870,8 @@ async function addAnimeStreams(malId, episode) {
     url: 'https://srtfile.github.io/megaplay_buzz_iframe_player/mal/' + malId + '/' + ep + '/sub/', type:'embed' });
   pushStream({ source:'anime', server:'FlixLoud', pill:'anime', label:'FlixLoud',
     url: 'https://donkarboy.github.io/flixloud/' + malId + '/1/', type:'embed' });
+  // Also add VidNestAnimePahe streams under 'anime' tab
+  await addVidNestAnimeStreams(malId, ep);
 }
 
 // ── Episode nav ───────────────────────────────────────────────────
@@ -852,12 +1111,13 @@ async function fetchAll() {
   hdrStatus('fetching\u2026');
   setChip('vn','pending'); setChip('va','pending');
   setChip('vr','pending'); setChip('vz','pending');
-  setChip('anime','pending');
+  setChip('vnapahe','pending'); setChip('anime','pending');
 
   await updateEpNavVisibility();
   updatePlayerTitle();
   updateNavButtonStates();
 
+  // Anime genre detection (MegaPlay + FlixLoud + VNAnimePahe under 'anime' tab)
   var animePromise = resolveAnime(tmdb, mtype).then(function(malId) {
     if (malId) {
       var ep = mtype === 'tv' ? (document.getElementById('g-episode').value || '1') : '1';
@@ -865,11 +1125,16 @@ async function fetchAll() {
     }
   });
 
+  // VidNestAnimePahe standalone — always runs, shows under 'vidnestanimepahe' tab
+  var vnaEp = mtype === 'tv' ? episode : '1';
+  var vnapahePromise = fetchVidNestAnimePahe(tmdb, mtype, vnaEp);
+
   await Promise.all([
     fetchVidnest (tmdb, mtype, season, episode),
     fetchVaplayer(tmdb, mtype, season, episode),
     fetchVidrock (tmdb, mtype, season, episode),
     fetchVidzee  (tmdb, mtype, season, episode),
+    vnapahePromise,
     animePromise,
   ]);
 
@@ -1143,11 +1408,11 @@ async function fetchVidzee(tmdb, mtype, season, episode) {
 // ── Stream list ───────────────────────────────────────────────────
 const SRC_BADGE = {
   vidnest:'srv-vn', vaplayer:'srv-va', vidrock:'srv-vr',
-  vidzee:'srv-vz', anime:'srv-anime'
+  vidzee:'srv-vz', vidnestanimepahe:'srv-vnapahe', anime:'srv-anime',
 };
 const SRC_NAME = {
   vidnest:'VidNest', vaplayer:'VAPlayer', vidrock:'VidRock',
-  vidzee:'Vidzee', anime:'Anime'
+  vidzee:'Vidzee', vidnestanimepahe:'VNAnimePahe', anime:'Anime',
 };
 
 function pushStream(s) {
@@ -1191,7 +1456,8 @@ function clearAll() {
   allStreams = [];
   document.getElementById('streamList').innerHTML = '';
   document.getElementById('totalBadge').textContent = '0';
-  ['vn','va','vr','vz','anime'].forEach(function(k){ setChip(k, ''); });
+  ['vn','va','vr','vz','vnapahe','anime'].forEach(function(k){ setChip(k, ''); });
+  hideVnapaheInfo();
 }
 function filterBy(tabEl) {
   activeFilter = tabEl.dataset.src;

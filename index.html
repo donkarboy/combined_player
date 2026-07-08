@@ -415,9 +415,9 @@ const ANIME_GENRE_ID = 16;
 const ANIMEAPI_BASE  = 'https://animeapi.my.id/themoviedb';
 
 // VidNest AnimePahe constants (shared by both anime-detected + standalone flows)
-const VNA_BASE   = 'https://donkarboy.github.io/vidnest_webpage//animepahe';
-const VNA_WORKER = 'https://purple-meadow-7b37.vidnest-1.workers.dev/fetch';
-const VNA_CORS   = 'https://corsproxy.io/?';
+// Base URL: donkarboy.github.io/vidnest_webpage is a public CORS-friendly GitHub Pages API
+// Endpoint: /animepahe/{malId}/{episode}/{lang}  →  returns JSON with stream.proxied.*
+const VNA_BASE = 'https://donkarboy.github.io/vidnest_webpage/animepahe';
 
 let hlsPlayer        = null;
 let activeItem       = null;
@@ -665,53 +665,82 @@ function hideVnapaheInfo() {
 // Fetches donkarboy.github.io/vidnest_webpage//animepahe/{malId}/{ep}/{lang}
 // Tries worker proxy first, then corsproxy.io fallback.
 async function vnaFetch(malId, episode, lang) {
+  // GitHub Pages endpoint — public, CORS-open, fetch directly first
   var apiUrl = VNA_BASE + '/' + malId + '/' + episode + '/' + lang;
-  var workerUrl = VNA_WORKER + '?url=' + encodeURIComponent(apiUrl);
+  console.log('[VNAnimePahe] Fetching:', apiUrl);
+
+  // 1. Direct fetch (GitHub Pages allows CORS)
   try {
-    var r = await fetch(workerUrl, { signal: AbortSignal.timeout(14000) });
+    var r = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
     if (r.ok) {
       var data = await r.json();
-      if (data && data.status === 200) return data;
+      if (data && data.status === 200 && data.stream) {
+        console.log('[VNAnimePahe] Direct fetch OK for', lang);
+        return data;
+      }
     }
-  } catch(e) { console.warn('[VNA worker]', e); }
-  var corsUrl = VNA_CORS + encodeURIComponent(apiUrl);
+  } catch(e) { console.warn('[VNAnimePahe] Direct fetch failed:', e.message); }
+
+  // 2. corsproxy.io fallback
   try {
-    var r2 = await fetch(corsUrl, { signal: AbortSignal.timeout(14000) });
+    var r2 = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(apiUrl), { signal: AbortSignal.timeout(15000) });
     if (r2.ok) {
       var data2 = await r2.json();
-      if (data2 && data2.status === 200) return data2;
+      if (data2 && data2.status === 200 && data2.stream) {
+        console.log('[VNAnimePahe] corsproxy.io OK for', lang);
+        return data2;
+      }
     }
-  } catch(e) { console.warn('[VNA corsproxy]', e); }
+  } catch(e) { console.warn('[VNAnimePahe] corsproxy.io failed:', e.message); }
+
+  // 3. allorigins fallback
+  try {
+    var r3 = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(apiUrl), { signal: AbortSignal.timeout(15000) });
+    if (r3.ok) {
+      var data3 = await r3.json();
+      if (data3 && data3.status === 200 && data3.stream) {
+        console.log('[VNAnimePahe] allorigins OK for', lang);
+        return data3;
+      }
+    }
+  } catch(e) { console.warn('[VNAnimePahe] allorigins failed:', e.message); }
+
+  console.warn('[VNAnimePahe] All fetch attempts failed for', lang, 'MAL', malId, 'Ep', episode);
   return null;
 }
 
-// Core extractor — used by both flows; source tag differs
+// Core extractor — used by both flows; source tag differs.
+// Extracts from response: stream.proxied.direct, stream.proxied.animanga, stream.proxied.worker
+// Falls back to stream.m3u8 if proxied block is missing.
 function vnaExtractAndPush(data, lang, sourceTag) {
-  if (!data || !data.stream || !data.stream.proxied) return 0;
-  var proxied = data.stream.proxied;
+  if (!data || !data.stream) return 0;
   var added = 0;
-  if (proxied.direct && typeof proxied.direct === 'string' && proxied.direct.startsWith('http')) {
-    pushStream({
-      source: sourceTag,
-      server: 'VNAnimePahe\u00B7' + lang.toUpperCase(),
-      pill:   'vnapahe',
-      label:  'AnimePahe ' + lang.toUpperCase() + ' Direct',
-      url:    proxied.direct,
-      type:   'hls',
-    });
-    added++;
+  var L = lang.toUpperCase();
+
+  function tryPush(url, label) {
+    if (url && typeof url === 'string' && url.startsWith('http')) {
+      pushStream({
+        source: sourceTag,
+        server: 'VNAnimePahe\u00B7' + L,
+        pill:   'vnapahe',
+        label:  'AnimePahe ' + L + ' ' + label,
+        url:    url,
+        type:   'hls',
+      });
+      added++;
+    }
   }
-  if (proxied.animanga && typeof proxied.animanga === 'string' && proxied.animanga.startsWith('http')) {
-    pushStream({
-      source: sourceTag,
-      server: 'VNAnimePahe\u00B7' + lang.toUpperCase(),
-      pill:   'vnapahe',
-      label:  'AnimePahe ' + lang.toUpperCase() + ' Animanga',
-      url:    proxied.animanga,
-      type:   'hls',
-    });
-    added++;
+
+  var proxied = data.stream.proxied || {};
+  tryPush(proxied.direct,   'Direct');
+  tryPush(proxied.animanga, 'Animanga');
+  tryPush(proxied.worker,   'Worker');
+
+  // Fallback: top-level m3u8 if no proxied streams were found
+  if (added === 0) {
+    tryPush(data.stream.m3u8, 'M3U8');
   }
+
   return added;
 }
 

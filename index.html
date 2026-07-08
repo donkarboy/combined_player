@@ -12,7 +12,6 @@
     --accent:#6c63ff; --accent2:#a78bfa; --text:#e2e8f0; --muted:#64748b;
     --ok:#4ade80; --err:#f87171; --warn:#fb923c;
     --tv:#f59e42; --rock:#38bdf8; --vidzee:#c084fc; --anime:#ff6b9d;
-    --vnapahe:#f472b6;
     --mono:'JetBrains Mono','Fira Code',monospace;
   }
   *{margin:0;padding:0;box-sizing:border-box;}
@@ -159,7 +158,6 @@
   .srv-vr{background:rgba(56,189,248,.15);color:var(--rock);}
   .srv-vz{background:rgba(192,132,252,.15);color:var(--vidzee);}
   .srv-anime{background:rgba(255,107,157,.15);color:var(--anime);}
-  .srv-vnapahe{background:rgba(244,114,182,.18);color:var(--vnapahe);}
 
   .stream-item{display:flex;align-items:center;gap:5px;padding:6px 7px;border-radius:7px;
     cursor:pointer;border:1px solid transparent;transition:all .12s;}
@@ -176,7 +174,6 @@
   .tag-rock{background:#0a1a24;color:var(--rock);}
   .tag-vidzee{background:#1a0a2a;color:var(--vidzee);}
   .tag-anime{background:rgba(255,107,157,.15);color:var(--anime);}
-  .tag-vnapahe{background:rgba(244,114,182,.18);color:var(--vnapahe);}
   .stream-url-text{font-size:.63rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}
   .stream-item.active .stream-url-text{color:var(--accent2);}
   .play-icon{flex-shrink:0;color:var(--accent);font-size:.72rem;opacity:0;}
@@ -220,14 +217,6 @@
   .anime-mal-id{font-family:var(--mono);font-size:.68rem;color:var(--anime);font-weight:700;}
   .anime-tried-types{font-size:.62rem;color:var(--muted);font-family:var(--mono);}
   .anime-warn{color:var(--warn);font-size:.66rem;}
-
-  /* VidNest AnimePahe info bar */
-  .vnapahe-info-bar{display:none;background:rgba(244,114,182,.07);border:1px solid rgba(244,114,182,.25);
-    border-radius:8px;padding:7px 12px;font-size:.7rem;gap:6px;flex-direction:column;}
-  .vnapahe-info-bar.visible{display:flex;}
-  .vnapahe-info-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
-  .vnapahe-mal-id{font-family:var(--mono);font-size:.68rem;color:var(--vnapahe);font-weight:700;}
-  .vnapahe-warn{color:var(--warn);font-size:.66rem;}
 
   ::-webkit-scrollbar{width:4px;}
   ::-webkit-scrollbar-track{background:transparent;}
@@ -288,23 +277,7 @@
         <span class="anime-warn" id="animeWarnText"></span>
       </div>
       <div class="anime-info-row" style="color:var(--muted);font-size:.66rem;" id="animeHint">
-        MegaPlay + FlixLoud + VidNest AnimePahe servers added &#8595;
-      </div>
-    </div>
-
-    <!-- VidNest AnimePahe standalone info bar -->
-    <div class="vnapahe-info-bar" id="vnapaheInfoBar">
-      <div class="vnapahe-info-row">
-        <span style="color:var(--vnapahe);font-weight:700;font-size:.72rem;">&#127800; VidNestAnimePahe</span>
-        <span style="color:var(--muted);font-size:.66rem;">MAL ID:</span>
-        <span class="vnapahe-mal-id" id="vnapaheMalId">&mdash;</span>
-        <span style="font-size:.62rem;color:var(--muted);font-family:var(--mono);" id="vnapaheStatus"></span>
-      </div>
-      <div class="vnapahe-info-row" id="vnapaheWarnRow" style="display:none;">
-        <span class="vnapahe-warn" id="vnapaheWarnText"></span>
-      </div>
-      <div class="vnapahe-info-row" style="color:var(--muted);font-size:.66rem;">
-        AnimePahe streams via donkarboy.github.io/vidnest_webpage &#8595;
+        MegaPlay + FlixLoud servers added &#8595;
       </div>
     </div>
 
@@ -387,7 +360,6 @@
       <div class="src-chip" id="chip-va"><span class="chip-dot"></span>VAPlayer</div>
       <div class="src-chip" id="chip-vr"><span class="chip-dot"></span>VidRock</div>
       <div class="src-chip" id="chip-vz"><span class="chip-dot"></span>Vidzee</div>
-      <div class="src-chip" id="chip-vnapahe"><span class="chip-dot"></span>&#127800; VNAnimePahe</div>
       <div class="src-chip" id="chip-anime"><span class="chip-dot"></span>&#127820; Anime</div>
     </div>
 
@@ -398,7 +370,6 @@
       <div class="filter-tab"        data-src="vaplayer"  onclick="filterBy(this)">&#127916; VAPlayer</div>
       <div class="filter-tab"        data-src="vidrock"   onclick="filterBy(this)">&#129395; VidRock</div>
       <div class="filter-tab"        data-src="vidzee"    onclick="filterBy(this)">&#128302; Vidzee</div>
-      <div class="filter-tab"        data-src="vnapahe"   onclick="filterBy(this)">&#127800; VNAnimePahe</div>
       <div class="filter-tab"        data-src="anime"     onclick="filterBy(this)">&#127820; Anime</div>
     </div>
 
@@ -414,11 +385,6 @@ const TMDB_BASE      = 'https://api.themoviedb.org/3';
 const ANIME_GENRE_ID = 16;
 const ANIMEAPI_BASE  = 'https://animeapi.my.id/themoviedb';
 
-// VidNest AnimePahe constants (shared by both anime-detected + standalone flows)
-// Base URL: donkarboy.github.io/vidnest_webpage is a public CORS-friendly GitHub Pages API
-// Endpoint: /animepahe/{malId}/{episode}/{lang}  →  returns JSON with stream.proxied.*
-const VNA_BASE = 'https://donkarboy.github.io/vidnest_webpage/animepahe';
-
 let hlsPlayer        = null;
 let activeItem       = null;
 let activeFilter     = 'all';
@@ -432,9 +398,7 @@ let currentMediaType = 'movie';
 let currentMalId     = null;
 let isAnimeContent   = false;
 let animeDetectCache = {};
-
-// MAL ID cache shared across both flows
-let malIdCache = {};
+let malIdCache       = {};
 
 // ── Episode mode ──────────────────────────────────────────────────
 function setEpMode(mode) {
@@ -537,7 +501,7 @@ function showDetectErr(msg) {
   errEl.className = 'ep-detect-err visible';
 }
 
-// ── Anime detection (genre-based, for the "Anime" tab) ────────────
+// ── Anime detection (genre-based) ────────────────────────────────
 async function tmdbCheckIsAnime(tmdbId, mtype) {
   var cacheKey = 'genres_' + tmdbId + '_' + mtype;
   if (animeDetectCache[cacheKey] !== undefined) return animeDetectCache[cacheKey];
@@ -581,7 +545,6 @@ async function fetchAnimeApiByType(tmdbId, apiType) {
   return { malId: data.myanimelist, usedType: apiType };
 }
 
-// Shared MAL ID resolver — used by both anime flow and VNAnimePahe flow
 async function findMalId(tmdbId, mtype) {
   var cacheKey = 'mal_' + tmdbId + '_' + mtype;
   if (malIdCache[cacheKey] !== undefined) return malIdCache[cacheKey];
@@ -617,7 +580,7 @@ async function resolveAnime(tmdbId, mtype) {
   return malInfo.malId;
 }
 
-// ── Anime info bar (genre-detected) ──────────────────────────────
+// ── Anime info bar ────────────────────────────────────────────────
 function showAnimeInfo(malInfo) {
   document.getElementById('animeInfoBar').classList.add('visible');
   document.getElementById('anime-badge').classList.add('visible');
@@ -641,162 +604,7 @@ function hideAnimeInfo() {
   document.getElementById('animeHint').style.display     = 'none';
 }
 
-// ── VidNest AnimePahe info bar (standalone) ───────────────────────
-function showVnapaheInfo(malId, usedType) {
-  document.getElementById('vnapaheInfoBar').classList.add('visible');
-  document.getElementById('vnapaheMalId').textContent = malId;
-  document.getElementById('vnapaheStatus').textContent = usedType ? '[via ' + usedType + ']' : '';
-  document.getElementById('vnapaheWarnRow').style.display = 'none';
-}
-function showVnapaheWarn(msg) {
-  document.getElementById('vnapaheInfoBar').classList.add('visible');
-  document.getElementById('vnapaheWarnText').textContent = '\u26A0 ' + msg;
-  document.getElementById('vnapaheWarnRow').style.display = '';
-}
-function hideVnapaheInfo() {
-  document.getElementById('vnapaheInfoBar').classList.remove('visible');
-  document.getElementById('vnapaheMalId').textContent = '\u2014';
-  document.getElementById('vnapaheStatus').textContent = '';
-  document.getElementById('vnapaheWarnRow').style.display = 'none';
-  document.getElementById('vnapaheWarnText').textContent  = '';
-}
-
-// ── VidNest AnimePahe low-level fetch ────────────────────────────
-// Fetches donkarboy.github.io/vidnest_webpage//animepahe/{malId}/{ep}/{lang}
-// Tries worker proxy first, then corsproxy.io fallback.
-async function vnaFetch(malId, episode, lang) {
-  // GitHub Pages endpoint — public, CORS-open, fetch directly first
-  var apiUrl = VNA_BASE + '/' + malId + '/' + episode + '/' + lang;
-  console.log('[VNAnimePahe] Fetching:', apiUrl);
-
-  // 1. Direct fetch (GitHub Pages allows CORS)
-  try {
-    var r = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
-    if (r.ok) {
-      var data = await r.json();
-      if (data && data.status === 200 && data.stream) {
-        console.log('[VNAnimePahe] Direct fetch OK for', lang);
-        return data;
-      }
-    }
-  } catch(e) { console.warn('[VNAnimePahe] Direct fetch failed:', e.message); }
-
-  // 2. corsproxy.io fallback
-  try {
-    var r2 = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(apiUrl), { signal: AbortSignal.timeout(15000) });
-    if (r2.ok) {
-      var data2 = await r2.json();
-      if (data2 && data2.status === 200 && data2.stream) {
-        console.log('[VNAnimePahe] corsproxy.io OK for', lang);
-        return data2;
-      }
-    }
-  } catch(e) { console.warn('[VNAnimePahe] corsproxy.io failed:', e.message); }
-
-  // 3. allorigins fallback
-  try {
-    var r3 = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(apiUrl), { signal: AbortSignal.timeout(15000) });
-    if (r3.ok) {
-      var data3 = await r3.json();
-      if (data3 && data3.status === 200 && data3.stream) {
-        console.log('[VNAnimePahe] allorigins OK for', lang);
-        return data3;
-      }
-    }
-  } catch(e) { console.warn('[VNAnimePahe] allorigins failed:', e.message); }
-
-  console.warn('[VNAnimePahe] All fetch attempts failed for', lang, 'MAL', malId, 'Ep', episode);
-  return null;
-}
-
-// Core extractor — used by both flows; source tag differs.
-// Extracts from response: stream.proxied.direct, stream.proxied.animanga, stream.proxied.worker
-// Falls back to stream.m3u8 if proxied block is missing.
-function vnaExtractAndPush(data, lang, sourceTag) {
-  if (!data || !data.stream) return 0;
-  var added = 0;
-  var L = lang.toUpperCase();
-
-  function tryPush(url, label) {
-    if (url && typeof url === 'string' && url.startsWith('http')) {
-      pushStream({
-        source: sourceTag,
-        server: 'VNAnimePahe\u00B7' + L,
-        pill:   'vnapahe',
-        label:  'AnimePahe ' + L + ' ' + label,
-        url:    url,
-        type:   'hls',
-      });
-      added++;
-    }
-  }
-
-  var proxied = data.stream.proxied || {};
-  tryPush(proxied.direct,   'Direct');
-  tryPush(proxied.animanga, 'Animanga');
-  tryPush(proxied.worker,   'Worker');
-
-  // Fallback: top-level m3u8 if no proxied streams were found
-  if (added === 0) {
-    tryPush(data.stream.m3u8, 'M3U8');
-  }
-
-  return added;
-}
-
-// ── VidNest AnimePahe STANDALONE source ───────────────────────────
-// Always runs, independently of anime genre detection.
-// Resolves MAL ID from TMDB via animeapi.my.id and fetches streams.
-async function fetchVidNestAnimePahe(tmdbId, mtype, episode) {
-  hideVnapaheInfo();
-  setChip('vnapahe', 'pending');
-  var ep = parseInt(episode, 10) || 1;
-
-  var malInfo = null;
-  try {
-    malInfo = await findMalId(tmdbId, mtype);
-  } catch(e) {
-    console.warn('[VNAnimePahe] MAL ID lookup failed', e);
-  }
-
-  if (!malInfo) {
-    setChip('vnapahe', 'err');
-    showVnapaheWarn('No MAL ID found for TMDB ' + tmdbId + ' \u2014 no AnimePahe streams available');
-    return;
-  }
-
-  showVnapaheInfo(malInfo.malId, malInfo.usedType);
-
-  var [dubData, subData] = await Promise.all([
-    vnaFetch(malInfo.malId, ep, 'dub').catch(function(){ return null; }),
-    vnaFetch(malInfo.malId, ep, 'sub').catch(function(){ return null; }),
-  ]);
-
-  var added = 0;
-  added += vnaExtractAndPush(dubData, 'dub', 'vnapahe');
-  added += vnaExtractAndPush(subData, 'sub', 'vnapahe');
-
-  if (added > 0) {
-    console.log('[VNAnimePahe] Added ' + added + ' streams for MAL ID ' + malInfo.malId + ' Ep ' + ep);
-    setChip('vnapahe', 'done');
-  } else {
-    console.warn('[VNAnimePahe] No streams for MAL ID ' + malInfo.malId + ' Ep ' + ep);
-    setChip('vnapahe', 'err');
-    showVnapaheWarn('MAL ID ' + malInfo.malId + ' found but no streams returned for Ep ' + ep);
-  }
-}
-
-// ── Anime streams (genre-detected flow — uses 'anime' source tag) ─
-async function addVidNestAnimeStreams(malId, episode) {
-  var ep = parseInt(episode, 10) || 1;
-  var [dubData, subData] = await Promise.all([
-    vnaFetch(malId, ep, 'dub').catch(function(){ return null; }),
-    vnaFetch(malId, ep, 'sub').catch(function(){ return null; }),
-  ]);
-  vnaExtractAndPush(dubData, 'dub', 'anime');
-  vnaExtractAndPush(subData, 'sub', 'anime');
-}
-
+// ── Anime streams ─────────────────────────────────────────────────
 async function addAnimeStreams(malId, episode) {
   var ep = parseInt(episode, 10) || 1;
   pushStream({ source:'anime', server:'MegaPlay', pill:'anime', label:'MegaPlay Dub',
@@ -805,7 +613,6 @@ async function addAnimeStreams(malId, episode) {
     url: 'https://srtfile.github.io/megaplay_buzz_iframe_player/mal/' + malId + '/' + ep + '/sub/', type:'embed' });
   pushStream({ source:'anime', server:'FlixLoud', pill:'anime', label:'FlixLoud',
     url: 'https://donkarboy.github.io/flixloud/' + malId + '/1/', type:'embed' });
-  await addVidNestAnimeStreams(malId, ep);
 }
 
 // ── Episode nav ───────────────────────────────────────────────────
@@ -1045,7 +852,7 @@ async function fetchAll() {
   hdrStatus('fetching\u2026');
   setChip('vn','pending'); setChip('va','pending');
   setChip('vr','pending'); setChip('vz','pending');
-  setChip('vnapahe','pending'); setChip('anime','pending');
+  setChip('anime','pending');
 
   await updateEpNavVisibility();
   updatePlayerTitle();
@@ -1058,16 +865,11 @@ async function fetchAll() {
     }
   });
 
-  // VidNest AnimePahe runs independently — always, for any content
-  var vnapaheEp = mtype === 'tv' ? episode : '1';
-  var vnapahePromise = fetchVidNestAnimePahe(tmdb, mtype, vnapaheEp);
-
   await Promise.all([
     fetchVidnest (tmdb, mtype, season, episode),
     fetchVaplayer(tmdb, mtype, season, episode),
     fetchVidrock (tmdb, mtype, season, episode),
     fetchVidzee  (tmdb, mtype, season, episode),
-    vnapahePromise,
     animePromise,
   ]);
 
@@ -1341,11 +1143,11 @@ async function fetchVidzee(tmdb, mtype, season, episode) {
 // ── Stream list ───────────────────────────────────────────────────
 const SRC_BADGE = {
   vidnest:'srv-vn', vaplayer:'srv-va', vidrock:'srv-vr',
-  vidzee:'srv-vz', vnapahe:'srv-vnapahe', anime:'srv-anime'
+  vidzee:'srv-vz', anime:'srv-anime'
 };
 const SRC_NAME = {
   vidnest:'VidNest', vaplayer:'VAPlayer', vidrock:'VidRock',
-  vidzee:'Vidzee', vnapahe:'VNAnimePahe', anime:'Anime'
+  vidzee:'Vidzee', anime:'Anime'
 };
 
 function pushStream(s) {
@@ -1389,8 +1191,7 @@ function clearAll() {
   allStreams = [];
   document.getElementById('streamList').innerHTML = '';
   document.getElementById('totalBadge').textContent = '0';
-  ['vn','va','vr','vz','vnapahe','anime'].forEach(function(k){ setChip(k, ''); });
-  hideVnapaheInfo();
+  ['vn','va','vr','vz','anime'].forEach(function(k){ setChip(k, ''); });
 }
 function filterBy(tabEl) {
   activeFilter = tabEl.dataset.src;
